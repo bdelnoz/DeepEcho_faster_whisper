@@ -6,27 +6,25 @@
 # Full Path       : ./getModels.sh
 # Author          : Bruno DELNOZ
 # Email           : bruno.delnoz@protonmail.com
-# Version         : V1.0.1
-# Date / Time     : 2026-10-09 15:41
+# Version         : V1.1.0-dev
+# Date / Time     : 2026-10-09 18:32 CEST
 # Target usage    : User-facing Faster-Whisper model manager
 #
 # CHANGELOG
+# V1.1.0-dev - 2026-10-09 18:32 CEST - Bruno DELNOZ
+#   - Validation candidate; not a release tag.
+#   - Added full 19-model reference immediately before EXAMPLES in help.
+#   - Added multi-model --model parsing for downloads.
+#   - Added --force explicit redownload/replace behavior.
+#   - Preserved --exec --list live registry/status behavior.
 # V1.0.1 - 2026-10-09 15:41 - Bruno DELNOZ
-#   - Renamed the delivered interface to getModels.sh / getModels.py.
-#   - Keeps the SH as the user-facing interface and forwards the same business
-#     arguments to the Python backend.
-#   - Supports --exec --list.
-#   - Supports --exec --download --model <NAME>.
-#   - Supports --simulate, --prerequis, --changelog and --models-dir.
-#   - Uses the repository-local .venv.
-#   - Stores models by default below <repo>/models/<model-name>/.
-#   - No argument displays help and performs no action.
+#   - Initial user-facing model-management wrapper.
 ################################################################################
 
 set -uo pipefail
 
-VERSION="V1.0.1"
-DATE_TIME="2026-10-09 15:41"
+VERSION="V1.1.0-dev"
+DATE_TIME="2026-10-09 18:32 CEST"
 AUTHOR="Bruno DELNOZ"
 EMAIL="bruno.delnoz@protonmail.com"
 
@@ -54,58 +52,86 @@ USAGE
   ./getModels.sh --help
   ./getModels.sh --prerequis
   ./getModels.sh --exec --list
-  ./getModels.sh --simulate --download --model <NAME>
-  ./getModels.sh --exec --download --model <NAME>
-  ./getModels.sh --exec --download --model <NAME> --models-dir <PATH>
+  ./getModels.sh --simulate --download --model <NAME> [NAME ...]
+  ./getModels.sh --exec --download --model <NAME> [NAME ...]
 
 SOLO CONTROL OPTIONS
   --help, -h
-      Display this help and perform no action.
+      Display help and perform no action.
 
   --exec, -exe
-      Execute the selected business action.
+      Execute the selected model action.
 
   --simulate, -s
-      Validate and display the selected action without downloading anything.
+      Resolve/validate the selected action without downloading or deleting.
 
   --prerequis, -pr
-      Check the local Python runtime and Faster-Whisper prerequisites.
+      Check model-management prerequisites only.
 
   --changelog, -ch
       Display the complete script changelog.
 
 MODEL ACTIONS
   --list
-      List every named model exposed by the installed Faster-Whisper package.
+      List every model exposed by the installed Faster-Whisper runtime.
+      Status is shown as INSTALLED, INCOMPLETE or not installed.
 
   --download
-      Download one model. Requires --model <NAME>.
+      Download one or more requested models.
 
 MODEL OPTIONS
-  --model <NAME>
-      Model name returned by --exec --list.
+  --model <NAME> [NAME ...]
+      One or more model names.
+      Example: --model base small medium
 
   --models-dir <PATH>
       Override model storage.
       Default: ${DEFAULT_MODELS_DIR}
+
+  --force
+      Valid only with --download.
+      Remove and redownload every requested local model, even when already
+      complete. Use this to replace a suspected corrupt local model.
+
+DEFAULT STORAGE
+  ${DEFAULT_MODELS_DIR}/<model-name>/
+
+AVAILABLE MODEL NAMES (REFERENCE)
+   1. tiny.en
+   2. tiny
+   3. base.en
+   4. base
+   5. small.en
+   6. small
+   7. medium.en
+   8. medium
+   9. large-v1
+  10. large-v2
+  11. large-v3
+  12. large
+  13. distil-large-v2
+  14. distil-medium.en
+  15. distil-small.en
+  16. distil-large-v3
+  17. distil-large-v3.5
+  18. large-v3-turbo
+  19. turbo
 
 EXAMPLES
   ./getModels.sh --prerequis
   ./getModels.sh --exec --list
   ./getModels.sh --simulate --download --model tiny
   ./getModels.sh --exec --download --model tiny
-  ./getModels.sh --exec --download --model medium
-  ./getModels.sh --exec --download --model large-v3
-
-DEFAULT STORAGE
-  tiny      -> ${DEFAULT_MODELS_DIR}/tiny/
-  medium    -> ${DEFAULT_MODELS_DIR}/medium/
-  large-v3  -> ${DEFAULT_MODELS_DIR}/large-v3/
+  ./getModels.sh --exec --download --model base small medium
+  ./getModels.sh --simulate --download --model base small medium --force
+  ./getModels.sh --exec --download --model base small medium --force
+  ./getModels.sh --exec --download --model large-v3 --models-dir /data/models
 
 NOTES
-  - Models contain several CTranslate2 files, so each model has its own folder.
-  - The script does not start a transcription.
-  - The default models/ directory may be replaced by a symbolic link.
+  - Existing complete models are skipped unless --force is used.
+  - An incomplete local model is not silently trusted; use --force to replace it.
+  - Invalid model names are reported; valid requested models are still processed.
+  - Models contain several CTranslate2 files, so each model has its own directory.
 EOF
 }
 
@@ -113,20 +139,20 @@ show_changelog() {
     cat <<'EOF'
 getModels.sh CHANGELOG
 
+V1.1.0-dev - 2026-10-09 18:32 CEST - Bruno DELNOZ
+  ADDED/CHANGED:
+  - Validation candidate; not a release tag.
+  - Complete 19-model reference immediately before EXAMPLES in help.
+  - Multiple model names accepted after --model.
+  - --force for explicit model replacement/redownload.
+  - Preserved live --exec --list status reporting.
+
 V1.0.1 - 2026-10-09 15:41 - Bruno DELNOZ
   ADDED/CHANGED:
-  - Final camel-case file name: getModels.sh.
-  - Shell remains the user-facing interface.
-  - Same business arguments are forwarded to getModels.py.
-  - --exec --list.
-  - --exec --download --model <NAME>.
-  - --simulate.
-  - --prerequis.
-  - --changelog.
-  - --models-dir.
-  - Repository-local .venv discovery.
-  - Repository-local models/ default.
-  - No-argument help behavior.
+  - User-facing shell model manager.
+  - --exec --list and --exec --download --model <NAME>.
+  - --simulate, --prerequis, --changelog and --models-dir.
+  - Repository-local .venv and models/ defaults.
 EOF
 }
 
@@ -137,49 +163,41 @@ die() {
 
 shell_prerequisites() {
     local rc=0
-
     echo "PREREQUISITES"
-    echo "------------------------------------------------------------"
-
+    echo "------------------------------------------------------------------------"
     if [[ -x "$PYTHON" ]]; then
-        echo "PRESENT : .venv Python       : $("$PYTHON" --version 2>&1)"
+        echo "PRESENT : .venv Python         : $("$PYTHON" --version 2>&1)"
     else
-        echo "MISSING : .venv Python       : ${PYTHON}"
+        echo "MISSING : .venv Python         : ${PYTHON}"
         rc=2
     fi
-
     if [[ -f "$PY_SCRIPT" ]]; then
-        echo "PRESENT : Python backend     : ${PY_SCRIPT}"
+        echo "PRESENT : Python backend       : ${PY_SCRIPT}"
     else
-        echo "MISSING : Python backend     : ${PY_SCRIPT}"
+        echo "MISSING : Python backend       : ${PY_SCRIPT}"
         rc=2
     fi
-
     if [[ -x "$PYTHON" ]]; then
-        if "$PYTHON" -c 'import faster_whisper' >/dev/null 2>&1; then
-            echo "PRESENT : faster-whisper     : import OK"
-        else
-            echo "MISSING : faster-whisper     : run ./install.sh --install"
-            rc=2
-        fi
-
-        if "$PYTHON" -c 'import huggingface_hub' >/dev/null 2>&1; then
-            echo "PRESENT : huggingface-hub    : import OK"
-        else
-            echo "MISSING : huggingface-hub    : required by faster-whisper"
-            rc=2
-        fi
+        "$PYTHON" -c 'import faster_whisper' >/dev/null 2>&1 \
+            && echo "PRESENT : faster-whisper       : import OK" \
+            || { echo "MISSING : faster-whisper       : run ./install.sh --install"; rc=2; }
+        "$PYTHON" -c 'import huggingface_hub' >/dev/null 2>&1 \
+            && echo "PRESENT : huggingface-hub      : import OK" \
+            || { echo "MISSING : huggingface-hub      : required by faster-whisper"; rc=2; }
     fi
-
-    echo "INFO    : default models dir : ${DEFAULT_MODELS_DIR}"
-    echo "------------------------------------------------------------"
-
-    if (( rc != 0 )); then
-        echo "RESULT  : ERROR"
-        return "$rc"
-    fi
-
+    echo "INFO    : default models dir   : ${DEFAULT_MODELS_DIR}"
+    echo "------------------------------------------------------------------------"
+    (( rc == 0 )) || { echo "RESULT  : ERROR"; return "$rc"; }
     "$PYTHON" "$PY_SCRIPT" --prerequis
+}
+
+is_known_option() {
+    case "$1" in
+        --help|-h|--exec|-exe|--simulate|-s|--prerequis|-pr|--changelog|-ch|\
+        --list|--download|--model|--models-dir|--force)
+            return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 if (( $# == 0 )); then
@@ -188,7 +206,6 @@ if (( $# == 0 )); then
 fi
 
 ORIGINAL_ARGS=("$@")
-
 EXEC_MODE=0
 SIMULATE_MODE=0
 PREREQUIS_MODE=0
@@ -196,94 +213,76 @@ HELP_MODE=0
 CHANGELOG_MODE=0
 ACTION_LIST=0
 ACTION_DOWNLOAD=0
-MODEL=""
+FORCE=0
+MODEL_COUNT=0
 MODELS_DIR=""
 
 while (( $# > 0 )); do
     case "$1" in
-        --help|-h)
-            HELP_MODE=1
-            shift
-            ;;
-        --exec|-exe)
-            EXEC_MODE=1
-            shift
-            ;;
-        --simulate|-s)
-            SIMULATE_MODE=1
-            shift
-            ;;
-        --prerequis|-pr)
-            PREREQUIS_MODE=1
-            shift
-            ;;
-        --changelog|-ch)
-            CHANGELOG_MODE=1
-            shift
-            ;;
-        --list)
-            ACTION_LIST=1
-            shift
-            ;;
-        --download)
-            ACTION_DOWNLOAD=1
-            shift
-            ;;
-        --model)
-            (( $# >= 2 )) || die "--model requires a value."
-            MODEL="$2"
-            shift 2
-            ;;
+        --help|-h) HELP_MODE=1; shift ;;
+        --exec|-exe) EXEC_MODE=1; shift ;;
+        --simulate|-s) SIMULATE_MODE=1; shift ;;
+        --prerequis|-pr) PREREQUIS_MODE=1; shift ;;
+        --changelog|-ch) CHANGELOG_MODE=1; shift ;;
+        --list) ACTION_LIST=1; shift ;;
+        --download) ACTION_DOWNLOAD=1; shift ;;
+        --force) FORCE=1; shift ;;
         --models-dir)
-            (( $# >= 2 )) || die "--models-dir requires a path."
+            (( $# >= 2 )) || die "--models-dir requires PATH."
             MODELS_DIR="$2"
             shift 2
             ;;
-        *)
-            die "Unknown argument: $1"
+        --model)
+            shift
+            (( $# >= 1 )) || die "--model requires at least one NAME."
+            VALUES=0
+            while (( $# > 0 )); do
+                if is_known_option "$1"; then
+                    break
+                fi
+                MODEL_COUNT=$((MODEL_COUNT + 1))
+                VALUES=$((VALUES + 1))
+                shift
+            done
+            (( VALUES > 0 )) || die "--model requires at least one NAME."
             ;;
+        *) die "Unknown argument: $1" ;;
     esac
 done
 
 if (( HELP_MODE == 1 )); then
-    (( EXEC_MODE == 0 && SIMULATE_MODE == 0 && PREREQUIS_MODE == 0 && CHANGELOG_MODE == 0 && ACTION_LIST == 0 && ACTION_DOWNLOAD == 0 )) \
+    (( EXEC_MODE == 0 && SIMULATE_MODE == 0 && PREREQUIS_MODE == 0 && CHANGELOG_MODE == 0 && ACTION_LIST == 0 && ACTION_DOWNLOAD == 0 && FORCE == 0 && MODEL_COUNT == 0 )) \
         || die "--help must be used alone."
     show_help
     exit 0
 fi
 
 if (( CHANGELOG_MODE == 1 )); then
-    (( EXEC_MODE == 0 && SIMULATE_MODE == 0 && PREREQUIS_MODE == 0 && ACTION_LIST == 0 && ACTION_DOWNLOAD == 0 )) \
+    (( EXEC_MODE == 0 && SIMULATE_MODE == 0 && PREREQUIS_MODE == 0 && ACTION_LIST == 0 && ACTION_DOWNLOAD == 0 && FORCE == 0 && MODEL_COUNT == 0 )) \
         || die "--changelog must be used alone."
     show_changelog
     exit 0
 fi
 
 if (( PREREQUIS_MODE == 1 )); then
-    (( EXEC_MODE == 0 && SIMULATE_MODE == 0 && ACTION_LIST == 0 && ACTION_DOWNLOAD == 0 )) \
+    (( EXEC_MODE == 0 && SIMULATE_MODE == 0 && ACTION_LIST == 0 && ACTION_DOWNLOAD == 0 && FORCE == 0 && MODEL_COUNT == 0 )) \
         || die "--prerequis must be used alone."
     shell_prerequisites
     exit $?
 fi
 
-(( EXEC_MODE + SIMULATE_MODE == 1 )) \
-    || die "Use exactly one execution gate: --exec or --simulate."
-
-(( ACTION_LIST + ACTION_DOWNLOAD == 1 )) \
-    || die "Use exactly one model action: --list or --download."
+(( EXEC_MODE + SIMULATE_MODE == 1 )) || die "Use exactly one execution gate: --exec or --simulate."
+(( ACTION_LIST + ACTION_DOWNLOAD == 1 )) || die "Use exactly one model action: --list or --download."
 
 if (( ACTION_DOWNLOAD == 1 )); then
-    [[ -n "$MODEL" ]] || die "--download requires --model <NAME>."
+    (( MODEL_COUNT > 0 )) || die "--download requires --model NAME [NAME ...]."
 else
-    [[ -z "$MODEL" ]] || die "--model is only valid with --download."
+    (( MODEL_COUNT == 0 )) || die "--model is only valid with --download."
+    (( FORCE == 0 )) || die "--force is only valid with --download."
 fi
 
-[[ -x "$PYTHON" ]] \
-    || die "Missing ${PYTHON}. Run ./install_pip.sh --install first."
-
-[[ -f "$PY_SCRIPT" ]] \
-    || die "Missing ${PY_SCRIPT}."
-
+[[ -x "$PYTHON" ]] || die "Missing ${PYTHON}. Run ./install_pip.sh --install first."
+[[ -f "$PY_SCRIPT" ]] || die "Missing ${PY_SCRIPT}."
 "$PYTHON" -c 'import faster_whisper' >/dev/null 2>&1 \
     || die "faster-whisper is not installed in .venv. Run ./install.sh --install."
 

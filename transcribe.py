@@ -6,35 +6,29 @@
 # Full Path       : ./transcribe.py
 # Author          : Bruno DELNOZ
 # Email           : bruno.delnoz@protonmail.com
-# Version         : V1.0.0
-# Date / Time     : 2026-10-09 16:45
+# Version         : V1.1.0-dev
+# Date / Time     : 2026-10-09 18:32 CEST
 # Target usage    : Faster-Whisper transcription backend
 #
 # CHANGELOG
+# V1.1.0-dev - 2026-10-09 18:32 CEST - Bruno DELNOZ
+#   - Validation candidate; not a release tag.
+#   - Added a single run timestamp in YYYYMMDD-HHMM-SS format.
+#   - Timestamped Markdown stays beside each source media file.
+#   - Plain Markdown and TXT now go to source-local .transcription/ by default.
+#   - Runtime logs now go to source-local .logs/ directories.
+#   - Multi-directory batches create one run log in every involved source dir.
+#   - All generated transcript/log filenames include the same run timestamp.
+#   - Automatic timestamp collision avoidance prevents normal overwrites.
+#   - Preserved filenames containing spaces and quoted/unquoted glob support.
+#   - Preserved PyAV 19+ / Faster-Whisper 1.2.1 metadata_errors workaround.
+#   - Preserved French default, CPU/int8 defaults, VAD OFF and explicit audio
+#     preprocessing behavior.
+# V1.0.1 - 2026-10-09 17:40 - Bruno DELNOZ
+#   - Fixed unquoted shell-expanded globs and filenames containing spaces.
+#   - Added PyAV 19+ compatibility for Faster-Whisper 1.2.1.
 # V1.0.0 - 2026-10-09 16:45 - Bruno DELNOZ
 #   - Initial Faster-Whisper transcription backend.
-#   - French transcription language by default.
-#   - CPU device and int8 compute type by default.
-#   - Explicit local model selection from ./models/<model-name>/.
-#   - No automatic model download.
-#   - Current working/source directory oriented workflow.
-#   - Single-file and glob/pattern batch selection.
-#   - Multiple --source arguments supported.
-#   - MP4 primary input with additional common media extensions accepted.
-#   - Raw transcription without editorial rewriting or censorship.
-#   - Segment timestamps enabled by default.
-#   - Plain Markdown and plain TXT outputs generated for every source.
-#   - Optional timestamped Markdown output can be disabled with --no-timestamp.
-#   - VAD disabled by default; opt-in with --vad.
-#   - Optional FFmpeg normalization and amplification.
-#   - --amplify factor and --amplify-db dB are mutually exclusive.
-#   - Original media is never modified.
-#   - --simulate resolves sources, model and outputs without transcribing.
-#   - --prerequis validates the local runtime without modifying it.
-#   - No-argument help behavior.
-#   - Output overwrite protection with explicit --force.
-#   - Runtime log written to the invocation current working directory.
-#   - Speaker diarization deliberately not faked in V1.0.0.
 ################################################################################
 
 from __future__ import annotations
@@ -50,11 +44,12 @@ import sys
 import tempfile
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable, Sequence
 
-VERSION = "V1.0.0"
-DATE_TIME = "2026-10-09 16:45"
+VERSION = "V1.1.0-dev"
+DATE_TIME = "2026-10-09 18:32 CEST"
 AUTHOR = "Bruno DELNOZ"
 EMAIL = "bruno.delnoz@protonmail.com"
 
@@ -68,29 +63,32 @@ SUPPORTED_MEDIA_EXTENSIONS = {
     ".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus",
 }
 
-CHANGELOG = """transcribe.py CHANGELOG
+CHANGELOG = f"""transcribe.py CHANGELOG
 
-V1.0.0 - 2026-10-09 16:45 - Bruno DELNOZ
+{VERSION} - {DATE_TIME} - {AUTHOR}
+  ADDED/CHANGED:
+  - Validation candidate; not a release tag.
+  - One run timestamp: YYYYMMDD-HHMM-SS.
+  - Timestamped Markdown remains beside each source file.
+  - Plain Markdown/TXT default to <source>/.transcription/.
+  - Runtime logs default to <source>/.logs/.
+  - Multi-directory batches receive a log in each involved source directory.
+  - Every generated transcript/log file uses the same run timestamp.
+  - Timestamp collision avoidance prevents normal overwrites.
+  - --dest-dir overrides the base for plain Markdown/TXT only; timestamped
+    Markdown and runtime logs remain source-local.
+  - Preserved glob/space handling and PyAV 19 compatibility workaround.
+
+V1.0.1 - 2026-10-09 17:40 - {AUTHOR}
+  FIXED:
+  - Unquoted shell-expanded globs after --source.
+  - Filenames containing spaces.
+  - PyAV 19 metadata_errors incompatibility with Faster-Whisper 1.2.1.
+
+V1.0.0 - 2026-10-09 16:45 - {AUTHOR}
   ADDED:
-  - Initial Faster-Whisper transcription backend.
-  - French language default.
-  - CPU/int8 default runtime.
-  - Local model lookup under ./models/<model-name>/.
-  - Explicit --model selection; no hidden model download.
-  - --source, --source-dir and --dest-dir.
-  - Single files, repeated sources and glob patterns.
-  - Default source pattern *.mp4 when --source is omitted during exec/simulate.
-  - Timestamped Markdown, plain Markdown and TXT outputs.
-  - --timestamp / --no-timestamp.
-  - --vad / --no-vad with VAD disabled by default.
-  - --normalize, --amplify and --amplify-db.
-  - --device and --compute-type.
-  - --models-dir.
-  - --force overwrite control.
-  - --exec, --simulate, --prerequis, --help and --changelog.
-  - Runtime log in the invocation current working directory.
-  - Original media protection.
-  - Speaker diarization intentionally deferred rather than faked.
+  - Initial transcription backend, French default, CPU/int8, local models,
+    raw transcription, timestamps, VAD controls, normalize/amplify controls.
 """
 
 
@@ -124,9 +122,9 @@ def build_parser() -> argparse.ArgumentParser:
     control.add_argument("--help", "-h", action="store_true",
                          help="Display help and perform no action.")
     control.add_argument("--exec", "-exe", action="store_true",
-                         help="Execute the transcription.")
+                         help="Execute transcription.")
     control.add_argument("--simulate", "-s", action="store_true",
-                         help="Resolve and validate the job without transcribing.")
+                         help="Resolve/validate the job without writing files.")
     control.add_argument("--prerequis", "-pr", action="store_true",
                          help="Check prerequisites only.")
     control.add_argument("--changelog", "-ch", action="store_true",
@@ -136,10 +134,11 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument(
         "--source",
         action="append",
+        nargs="+",
         metavar="FILE_OR_GLOB",
         help=(
-            "Source file or glob pattern. Repeatable.\n"
-            "Examples: video.mp4, '*.mp4', 'Toto*.mp4'.\n"
+            "One or more source files or glob patterns. Repeatable.\n"
+            "Supports quoted globs and shell-expanded unquoted globs.\n"
             "Default for exec/simulate: *.mp4"
         ),
     )
@@ -147,121 +146,73 @@ def build_parser() -> argparse.ArgumentParser:
         "--source-dir",
         default=".",
         metavar="PATH",
-        help="Base directory used to resolve relative source patterns. Default: .",
+        help="Base directory used for relative source patterns. Default: .",
     )
     source.add_argument(
         "--dest-dir",
         default=None,
         metavar="PATH",
         help=(
-            "Destination directory for transcripts.\n"
-            "Default: source file directory (therefore '.' in the normal workflow)."
+            "Override base directory for plain Markdown/TXT outputs.\n"
+            "They are placed in <dest-dir>/.transcription/.\n"
+            "Default: <source-dir-of-each-file>/.transcription/.\n"
+            "Timestamped Markdown and logs always remain source-local."
         ),
     )
 
     runtime = parser.add_argument_group("MODEL / RUNTIME")
-    runtime.add_argument(
-        "--model",
-        metavar="NAME",
-        help=(
-            "Downloaded Faster-Whisper model name under models/<NAME>/.\n"
-            "Required for --exec and --simulate."
-        ),
-    )
-    runtime.add_argument(
-        "--models-dir",
-        default=str(default_models_dir()),
-        metavar="PATH",
-        help="Models directory. Default: <repo>/models",
-    )
-    runtime.add_argument(
-        "--language",
-        default=DEFAULT_LANGUAGE,
-        metavar="LANG",
-        help="Transcription language code. Default: fr. Use 'auto' for detection.",
-    )
-    runtime.add_argument(
-        "--device",
-        default=DEFAULT_DEVICE,
-        metavar="DEVICE",
-        help="CTranslate2 device. Default: cpu.",
-    )
-    runtime.add_argument(
-        "--compute-type",
-        default=DEFAULT_COMPUTE_TYPE,
-        metavar="TYPE",
-        help="CTranslate2 compute type. Default: int8.",
-    )
+    runtime.add_argument("--model", metavar="NAME",
+                         help="Downloaded local model name; required for exec/simulate.")
+    runtime.add_argument("--models-dir", default=str(default_models_dir()), metavar="PATH",
+                         help="Models directory. Default: <repo>/models")
+    runtime.add_argument("--language", default=DEFAULT_LANGUAGE, metavar="LANG",
+                         help="Transcription language. Default: fr. Use auto for detection.")
+    runtime.add_argument("--device", default=DEFAULT_DEVICE, metavar="DEVICE",
+                         help="CTranslate2 device. Default: cpu.")
+    runtime.add_argument("--compute-type", default=DEFAULT_COMPUTE_TYPE, metavar="TYPE",
+                         help="CTranslate2 compute type. Default: int8.")
 
     audio = parser.add_argument_group("AUDIO PROCESSING")
     vad = audio.add_mutually_exclusive_group()
-    vad.add_argument(
-        "--vad",
-        dest="vad",
-        action="store_true",
-        help="Enable Silero VAD. Default: disabled.",
-    )
-    vad.add_argument(
-        "--no-vad",
-        dest="vad",
-        action="store_false",
-        help="Disable VAD explicitly. This is the default.",
-    )
+    vad.add_argument("--vad", dest="vad", action="store_true",
+                     help="Enable Silero VAD. Default: disabled.")
+    vad.add_argument("--no-vad", dest="vad", action="store_false",
+                     help="Explicitly disable VAD.")
     parser.set_defaults(vad=False)
-
-    audio.add_argument(
-        "--normalize",
-        action="store_true",
-        help="Normalize a temporary audio copy with FFmpeg loudnorm before transcription.",
-    )
-
+    audio.add_argument("--normalize", action="store_true",
+                       help="Normalize a temporary audio copy with FFmpeg loudnorm.")
     amp = audio.add_mutually_exclusive_group()
-    amp.add_argument(
-        "--amplify",
-        type=float,
-        metavar="FACTOR",
-        help="Multiply temporary audio volume by FACTOR, e.g. --amplify 2.",
-    )
-    amp.add_argument(
-        "--amplify-db",
-        type=float,
-        metavar="DB",
-        help="Amplify temporary audio by DB decibels, e.g. --amplify-db 6.",
-    )
+    amp.add_argument("--amplify", type=float, metavar="FACTOR",
+                     help="Multiply temporary audio volume, e.g. --amplify 2.")
+    amp.add_argument("--amplify-db", type=float, metavar="DB",
+                     help="Change temporary audio volume in dB, e.g. --amplify-db 6.")
 
     outputs = parser.add_argument_group("OUTPUT")
     timestamps = outputs.add_mutually_exclusive_group()
-    timestamps.add_argument(
-        "--timestamp",
-        dest="timestamps",
-        action="store_true",
-        help="Generate timestamped Markdown. Default: enabled.",
-    )
-    timestamps.add_argument(
-        "--no-timestamp",
-        dest="timestamps",
-        action="store_false",
-        help="Do not generate the timestamped Markdown file.",
-    )
+    timestamps.add_argument("--timestamp", dest="timestamps", action="store_true",
+                            help="Generate timestamped Markdown. Default: enabled.")
+    timestamps.add_argument("--no-timestamp", dest="timestamps", action="store_false",
+                            help="Do not generate timestamped Markdown.")
     parser.set_defaults(timestamps=True)
+    outputs.add_argument("--force", action="store_true",
+                         help="Allow replacement only if an exact timestamped target already exists.")
 
-    outputs.add_argument(
-        "--force",
-        action="store_true",
-        help="Allow replacement of transcript files that already exist.",
-    )
-
-    parser.epilog = """OUTPUT NAMING
-  source.mp4.transcription_timestamps.md
-  source.mp4.transcription.md
-  source.mp4.transcript.txt
+    parser.epilog = """OUTPUT LAYOUT (DEFAULT)
+  source-dir/
+  ├── source.mp4
+  ├── source.mp4.transcription_timestamps-YYYYMMDD-HHMM-SS.md
+  ├── .transcription/
+  │   ├── source.mp4.transcription-YYYYMMDD-HHMM-SS.md
+  │   └── source.mp4.transcript-YYYYMMDD-HHMM-SS.txt
+  └── .logs/
+      └── transcribe-VERSION-YYYYMMDD-HHMM-SS.log
 
 EXAMPLES
   ./transcribe.py --prerequis
   ./transcribe.py --simulate --model tiny --source video.mp4
   ./transcribe.py --exec --model tiny --source video.mp4
   ./transcribe.py --exec --model tiny --source '*.mp4'
-  ./transcribe.py --exec --model tiny --source 'Toto*.mp4'
+  ./transcribe.py --exec --model tiny --source video1.mp4 'video 2.mp4'
   ./transcribe.py --exec --model tiny --source-dir /media/videos
   ./transcribe.py --exec --model tiny --source video.mp4 --dest-dir /media/results
   ./transcribe.py --exec --model tiny --source video.mp4 --amplify 2
@@ -270,11 +221,13 @@ EXAMPLES
   ./transcribe.py --exec --model tiny --source video.mp4 --vad
 
 IMPORTANT
-  - French is already the default transcription language.
+  - French is already the default language.
   - VAD, normalization and amplification are OFF unless explicitly requested.
   - Source media is never modified.
   - Missing models are never downloaded automatically.
-  - Speaker diarization is not implemented in V1.0.0; no fake speaker labels are generated.
+  - Raw model text is preserved; no editorial rewriting or censorship.
+  - Speaker diarization is not implemented; no fake speaker labels are generated.
+  - SRT, WebVTT and JSON are not generated in this validation build.
 """
     return parser
 
@@ -306,7 +259,48 @@ def model_path(models_dir: Path, model_name: str) -> Path:
 
 
 def model_complete(path: Path) -> bool:
-    return path.is_dir() and (path / "config.json").is_file() and (path / "model.bin").is_file()
+    return (
+        path.is_dir()
+        and (path / "config.json").is_file()
+        and (path / "model.bin").is_file()
+    )
+
+
+def pyav_major_version() -> int | None:
+    try:
+        import av
+        raw = str(getattr(av, "__version__", "")).split(".", 1)[0]
+        return int(raw)
+    except (ImportError, TypeError, ValueError):
+        return None
+
+
+def install_pyav_compatibility() -> bool:
+    """Enable Faster-Whisper 1.2.1 / PyAV 19+ metadata_errors compatibility."""
+    try:
+        import av
+        import faster_whisper.audio as fw_audio
+    except Exception:
+        return False
+
+    major = pyav_major_version()
+    if major is None or major < 19:
+        return False
+
+    current_open = av.open
+    if getattr(current_open, "_deepecho_pyav19_compat", False):
+        return True
+
+    original_open = current_open
+
+    def compatible_open(*args, **kwargs):
+        kwargs.pop("metadata_errors", None)
+        return original_open(*args, **kwargs)
+
+    compatible_open._deepecho_pyav19_compat = True
+    av.open = compatible_open
+    fw_audio.av.open = compatible_open
+    return True
 
 
 def ffmpeg_required(args: argparse.Namespace) -> bool:
@@ -319,18 +313,14 @@ def validate_numeric_options(args: argparse.Namespace, parser: argparse.Argument
 
 
 def validate_control(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    if args.help:
-        return
-    if args.changelog:
+    if args.help or args.changelog:
         return
     if args.prerequis:
         if args.exec or args.simulate:
             parser.error("--prerequis is a standalone control action.")
         return
-
     if int(args.exec) + int(args.simulate) != 1:
         parser.error("Use exactly one execution gate: --exec or --simulate.")
-
     if not args.model:
         parser.error("--exec/--simulate requires --model <NAME>.")
 
@@ -338,11 +328,9 @@ def validate_control(args: argparse.Namespace, parser: argparse.ArgumentParser) 
 def run_prerequisites(args: argparse.Namespace) -> int:
     ok = True
     models_dir = resolve_path(args.models_dir)
-
     print("PREREQUISITES")
-    print("-" * 72)
+    print("-" * 76)
     print(f"PRESENT : Python               : {sys.version.split()[0]}")
-
     if sys.version_info < (3, 9):
         print("MISSING : Python >= 3.9        : required")
         ok = False
@@ -357,94 +345,154 @@ def run_prerequisites(args: argparse.Namespace) -> int:
         else:
             print(f"PRESENT : {package:<20} : {version}")
 
+    pyav_major = pyav_major_version()
+    if pyav_major is not None and pyav_major >= 19:
+        print("COMPAT  : PyAV >= 19           : metadata_errors workaround active at runtime")
+    elif pyav_major is not None:
+        print("INFO    : PyAV compatibility   : native Faster-Whisper path")
+    else:
+        print("NOTICE  : PyAV compatibility   : version could not be determined")
+
     if shutil.which("ffmpeg"):
         print(f"PRESENT : ffmpeg               : {shutil.which('ffmpeg')}")
     else:
-        print("OPTIONAL: ffmpeg               : missing; required only for normalize/amplify")
+        print("OPTIONAL: ffmpeg               : needed only for normalize/amplify")
 
     print(f"INFO    : models directory     : {models_dir}")
     if models_dir.exists():
-        installed = sorted(
-            p.name for p in models_dir.iterdir()
-            if p.is_dir() and model_complete(p)
-        )
-        if installed:
-            print(f"PRESENT : local models         : {', '.join(installed)}")
-        else:
-            print("NOTICE  : local models         : none detected")
+        installed = sorted(p.name for p in models_dir.iterdir() if p.is_dir() and model_complete(p))
+        print("PRESENT : local models         : " + (", ".join(installed) if installed else "none detected"))
     else:
         print("NOTICE  : local models         : models directory does not exist")
 
     cwd_usage = shutil.disk_usage(Path.cwd())
     print(f"INFO    : free space on .      : {cwd_usage.free // (1024 * 1024)} MiB")
-
-    print("-" * 72)
+    print("-" * 76)
     print("RESULT  : " + ("OK" if ok else "ERROR"))
     return 0 if ok else 2
 
 
-def resolve_sources(source_dir: Path, source_specs: Sequence[str] | None) -> list[Path]:
-    specs = list(source_specs or ["*.mp4"])
+def flatten_source_specs(source_specs: Sequence[Sequence[str]] | None) -> list[str]:
+    if not source_specs:
+        return ["*.mp4"]
+    flattened: list[str] = []
+    for group in source_specs:
+        flattened.extend(group)
+    return flattened
+
+
+def resolve_sources(source_dir: Path, source_specs: Sequence[Sequence[str]] | None) -> list[Path]:
+    specs = flatten_source_specs(source_specs)
     result: list[Path] = []
     seen: set[str] = set()
 
     for spec in specs:
         expanded = os.path.expanduser(spec)
-
         candidate = Path(expanded)
-        if candidate.is_absolute():
-            pattern = str(candidate)
-        else:
-            pattern = str(source_dir / expanded)
-
+        pattern = str(candidate) if candidate.is_absolute() else str(source_dir / expanded)
         has_glob = any(char in expanded for char in "*?[")
-
-        if has_glob:
-            matches = [Path(p) for p in glob.glob(pattern, recursive=True)]
-        else:
-            matches = [Path(pattern)]
+        matches = [Path(p) for p in glob.glob(pattern, recursive=True)] if has_glob else [Path(pattern)]
 
         for match in sorted(matches, key=lambda p: str(p).lower()):
             try:
                 resolved = match.resolve(strict=True)
             except FileNotFoundError:
                 continue
-
             if not resolved.is_file():
                 continue
-
             if resolved.suffix.lower() not in SUPPORTED_MEDIA_EXTENSIONS:
                 continue
-
             key = str(resolved)
             if key not in seen:
                 seen.add(key)
                 result.append(resolved)
-
     return result
 
 
-def output_paths(source: Path, dest_dir: Path | None) -> OutputPaths:
-    target_dir = source.parent if dest_dir is None else dest_dir
+def format_run_stamp(dt: datetime) -> str:
+    return dt.strftime("%Y%m%d-%H%M-%S")
+
+
+def output_paths(source: Path, dest_dir: Path | None, run_stamp: str) -> OutputPaths:
     base = source.name
+    transcript_base = source.parent if dest_dir is None else dest_dir
+    transcript_dir = transcript_base / ".transcription"
     return OutputPaths(
-        timestamp_md=target_dir / f"{base}.transcription_timestamps.md",
-        plain_md=target_dir / f"{base}.transcription.md",
-        plain_txt=target_dir / f"{base}.transcript.txt",
+        timestamp_md=source.parent / f"{base}.transcription_timestamps-{run_stamp}.md",
+        plain_md=transcript_dir / f"{base}.transcription-{run_stamp}.md",
+        plain_txt=transcript_dir / f"{base}.transcript-{run_stamp}.txt",
     )
 
 
-def ensure_output_available(paths: OutputPaths, timestamps: bool, force: bool) -> None:
-    candidates = [paths.plain_md, paths.plain_txt]
-    if timestamps:
-        candidates.append(paths.timestamp_md)
+def log_paths_for_sources(sources: Sequence[Path], run_stamp: str) -> list[Path]:
+    unique_dirs = sorted({source.parent for source in sources}, key=lambda p: str(p).lower())
+    return [
+        directory / ".logs" / f"transcribe-{VERSION}-{run_stamp}.log"
+        for directory in unique_dirs
+    ]
 
-    existing = [p for p in candidates if p.exists()]
+
+def candidate_paths(
+    sources: Sequence[Path],
+    dest_dir: Path | None,
+    run_stamp: str,
+    timestamps: bool,
+) -> list[Path]:
+    paths: list[Path] = []
+    for source in sources:
+        out = output_paths(source, dest_dir, run_stamp)
+        paths.extend([out.plain_md, out.plain_txt])
+        if timestamps:
+            paths.append(out.timestamp_md)
+    paths.extend(log_paths_for_sources(sources, run_stamp))
+    return paths
+
+
+def choose_run_stamp(
+    sources: Sequence[Path],
+    dest_dir: Path | None,
+    timestamps: bool,
+    force: bool,
+) -> str:
+    now = datetime.now()
+    if force:
+        return format_run_stamp(now)
+    for offset in range(0, 120):
+        stamp = format_run_stamp(now + timedelta(seconds=offset))
+        if not any(path.exists() for path in candidate_paths(sources, dest_dir, stamp, timestamps)):
+            return stamp
+    raise RuntimeError("Unable to allocate a unique timestamped output set within 120 seconds.")
+
+
+def validate_output_collisions(
+    sources: Sequence[Path],
+    dest_dir: Path | None,
+    run_stamp: str,
+    timestamps: bool,
+    force: bool,
+) -> None:
+    generated: list[Path] = []
+    for source in sources:
+        out = output_paths(source, dest_dir, run_stamp)
+        generated.extend([out.plain_md, out.plain_txt])
+        if timestamps:
+            generated.append(out.timestamp_md)
+
+    duplicates: dict[Path, int] = {}
+    for p in generated:
+        duplicates[p] = duplicates.get(p, 0) + 1
+    duplicate_targets = [p for p, count in duplicates.items() if count > 1]
+    if duplicate_targets:
+        formatted = "\n".join(f"  - {p}" for p in duplicate_targets)
+        raise RuntimeError(
+            "Multiple sources resolve to the same output target. "
+            "Use separate destination directories or distinct source names:\n" + formatted
+        )
+
+    existing = [p for p in generated if p.exists()]
     if existing and not force:
         formatted = "\n".join(f"  - {p}" for p in existing)
-        raise RuntimeError(
-            "Output file(s) already exist. Use --force to replace them:\n" + formatted
-        )
+        raise RuntimeError("Timestamped output target(s) already exist:\n" + formatted)
 
 
 def format_timestamp(seconds: float) -> str:
@@ -459,16 +507,12 @@ def format_timestamp(seconds: float) -> str:
 
 def build_audio_filter(args: argparse.Namespace) -> str | None:
     filters: list[str] = []
-
     if args.normalize:
         filters.append("loudnorm")
-
     if args.amplify is not None:
         filters.append(f"volume={args.amplify}")
-
     if args.amplify_db is not None:
         filters.append(f"volume={args.amplify_db}dB")
-
     return ",".join(filters) if filters else None
 
 
@@ -476,38 +520,24 @@ def preprocess_audio(source: Path, args: argparse.Namespace, temp_dir: Path) -> 
     audio_filter = build_audio_filter(args)
     if audio_filter is None:
         return source
-
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
-        raise RuntimeError(
-            "FFmpeg is required for --normalize/--amplify/--amplify-db but was not found."
-        )
+        raise RuntimeError("FFmpeg is required for normalize/amplify but was not found.")
 
     target = temp_dir / f"{source.name}.deepecho.wav"
-
     command = [
-        ffmpeg,
-        "-hide_banner",
-        "-loglevel", "error",
-        "-y",
-        "-i", str(source),
-        "-vn",
-        "-af", audio_filter,
-        "-ac", "1",
-        "-ar", "16000",
-        "-c:a", "pcm_s16le",
-        str(target),
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+        "-i", str(source), "-vn", "-af", audio_filter,
+        "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", str(target),
     ]
-
     subprocess.run(command, check=True)
-
     if not target.is_file() or target.stat().st_size == 0:
         raise RuntimeError("FFmpeg preprocessing did not produce a valid temporary audio file.")
-
     return target
 
 
 def load_model(args: argparse.Namespace):
+    compat_active = install_pyav_compatibility()
     try:
         from faster_whisper import WhisperModel
     except Exception as exc:
@@ -517,18 +547,14 @@ def load_model(args: argparse.Namespace):
 
     models_dir = resolve_path(args.models_dir)
     selected = model_path(models_dir, args.model)
-
     if not model_complete(selected):
         raise RuntimeError(
             f"Model '{args.model}' is not installed at {selected}. "
             f"Download it first with ./getModels.sh --exec --download --model {args.model}"
         )
 
-    return WhisperModel(
-        str(selected),
-        device=args.device,
-        compute_type=args.compute_type,
-    ), selected
+    model = WhisperModel(str(selected), device=args.device, compute_type=args.compute_type)
+    return model, selected, compat_active
 
 
 def write_outputs(
@@ -536,15 +562,8 @@ def write_outputs(
     paths: OutputPaths,
     segments: Iterable,
     timestamps: bool,
-    force: bool,
 ) -> tuple[int, float]:
-    ensure_output_available(paths, timestamps=timestamps, force=force)
-
     paths.plain_md.parent.mkdir(parents=True, exist_ok=True)
-
-    mode = "w"
-    encoding = "utf-8"
-
     count = 0
     last_end = 0.0
     plain_chunks: list[str] = []
@@ -554,57 +573,52 @@ def write_outputs(
         text = str(segment.text).strip()
         if not text:
             continue
-
         count += 1
         start = float(segment.start)
         end = float(segment.end)
         last_end = max(last_end, end)
-
-        # Preserve the model's text. Only surrounding whitespace is removed.
         plain_chunks.append(text)
-        timestamp_lines.append(
-            f"[{format_timestamp(start)} --> {format_timestamp(end)}] {text}"
-        )
+        timestamp_lines.append(f"[{format_timestamp(start)} --> {format_timestamp(end)}] {text}")
 
     plain_text = "\n".join(plain_chunks).rstrip() + ("\n" if plain_chunks else "")
-
-    paths.plain_txt.write_text(plain_text, encoding=encoding, newline="\n")
-    paths.plain_md.write_text(plain_text, encoding=encoding, newline="\n")
+    paths.plain_txt.write_text(plain_text, encoding="utf-8", newline="\n")
+    paths.plain_md.write_text(plain_text, encoding="utf-8", newline="\n")
 
     if timestamps:
         timestamp_text = "\n".join(timestamp_lines).rstrip()
         if timestamp_text:
             timestamp_text += "\n"
-        paths.timestamp_md.write_text(timestamp_text, encoding=encoding, newline="\n")
-
+        paths.timestamp_md.write_text(timestamp_text, encoding="utf-8", newline="\n")
     return count, last_end
 
 
-def setup_logger() -> tuple[logging.Logger, Path]:
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    log_path = Path.cwd() / f"log.transcribe.{VERSION}.{stamp}.log"
-
+def setup_logger(sources: Sequence[Path], run_stamp: str) -> tuple[logging.Logger, list[Path]]:
+    log_paths = log_paths_for_sources(sources, run_stamp)
     logger = logging.getLogger("deepecho")
     logger.setLevel(logging.INFO)
+    logger.propagate = False
     logger.handlers.clear()
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 
-    handler = logging.FileHandler(log_path, encoding="utf-8")
-    handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
-    logger.addHandler(handler)
-
-    return logger, log_path
+    for log_path in log_paths:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(log_path, encoding="utf-8")
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+    return logger, log_paths
 
 
 def print_plan(
     args: argparse.Namespace,
     sources: Sequence[Path],
-    models_dir: Path,
     selected_model: Path,
     dest_dir: Path | None,
+    run_stamp: str,
 ) -> None:
     print("TRANSCRIPTION PLAN")
-    print("-" * 72)
+    print("-" * 76)
     print(f"Mode                : {'EXEC' if args.exec else 'SIMULATE'}")
+    print(f"Run timestamp       : {run_stamp}")
     print(f"Model               : {args.model}")
     print(f"Model path          : {selected_model}")
     print(f"Language            : {args.language}")
@@ -615,24 +629,24 @@ def print_plan(
     print(f"Amplify factor      : {args.amplify if args.amplify is not None else 'OFF'}")
     print(f"Amplify dB          : {args.amplify_db if args.amplify_db is not None else 'OFF'}")
     print(f"Timestamped MD      : {'ON' if args.timestamps else 'OFF'}")
-    print(f"Overwrite           : {'YES' if args.force else 'NO'}")
+    print(f"Force exact target  : {'YES' if args.force else 'NO'}")
     print(f"Source count        : {len(sources)}")
-    print(f"Destination override: {dest_dir if dest_dir is not None else 'source file directory'}")
-    print("-" * 72)
+    print(f"Plain output base   : {dest_dir if dest_dir is not None else 'each source directory'}")
+    print("-" * 76)
 
     for index, source in enumerate(sources, start=1):
-        paths = output_paths(source, dest_dir)
+        paths = output_paths(source, dest_dir, run_stamp)
         print(f"{index}. SOURCE : {source}")
         if args.timestamps:
             print(f"   OUTPUT : {paths.timestamp_md}")
         print(f"   OUTPUT : {paths.plain_md}")
         print(f"   OUTPUT : {paths.plain_txt}")
+        print(f"   LOGDIR : {source.parent / '.logs'}")
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     argv = sys.argv[1:] if argv is None else argv
-
     if not argv:
         print_help(parser)
         return 0
@@ -641,14 +655,18 @@ def main(argv: list[str] | None = None) -> int:
     validate_numeric_options(args, parser)
 
     if args.help:
+        if len(argv) != 1:
+            parser.error("--help must be used alone.")
         print_help(parser)
         return 0
-
     if args.changelog:
+        if len(argv) != 1:
+            parser.error("--changelog must be used alone.")
         print(CHANGELOG.rstrip())
         return 0
-
     if args.prerequis:
+        if any((args.exec, args.simulate, args.model)):
+            parser.error("--prerequis is a standalone control action.")
         return run_prerequisites(args)
 
     validate_control(args, parser)
@@ -659,77 +677,60 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     dest_dir = resolve_path(args.dest_dir) if args.dest_dir is not None else None
-    if dest_dir is not None:
-        if args.simulate:
-            if not dest_dir.exists():
-                print(f"NOTICE: destination directory would be created: {dest_dir}")
-        else:
-            dest_dir.mkdir(parents=True, exist_ok=True)
-
     sources = resolve_sources(source_dir, args.source)
     if not sources:
-        patterns = args.source or ["*.mp4"]
-        print(
-            f"ERROR: no supported media matched {patterns} in {source_dir}",
-            file=sys.stderr,
-        )
+        patterns = flatten_source_specs(args.source)
+        print(f"ERROR: no supported media matched {patterns} in {source_dir}", file=sys.stderr)
         return 2
 
     models_dir = resolve_path(args.models_dir)
     selected_model = model_path(models_dir, args.model)
-
     if not model_complete(selected_model):
-        print(
-            f"ERROR: model '{args.model}' is not installed at {selected_model}",
-            file=sys.stderr,
-        )
-        print(
-            f"Download it first with: ./getModels.sh --exec --download --model {args.model}",
-            file=sys.stderr,
-        )
+        print(f"ERROR: model '{args.model}' is not installed at {selected_model}", file=sys.stderr)
+        print(f"Download it first with: ./getModels.sh --exec --download --model {args.model}", file=sys.stderr)
         return 2
 
     if ffmpeg_required(args) and shutil.which("ffmpeg") is None:
-        print(
-            "ERROR: FFmpeg is required for normalize/amplify but was not found.",
-            file=sys.stderr,
-        )
+        print("ERROR: FFmpeg is required for normalize/amplify but was not found.", file=sys.stderr)
         return 2
 
-    # Refuse accidental overwrites already during simulation/planning.
     try:
-        for source in sources:
-            ensure_output_available(
-                output_paths(source, dest_dir),
-                timestamps=args.timestamps,
-                force=args.force,
-            )
+        run_stamp = choose_run_stamp(sources, dest_dir, args.timestamps, args.force)
+        validate_output_collisions(sources, dest_dir, run_stamp, args.timestamps, args.force)
     except RuntimeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
-    print_plan(args, sources, models_dir, selected_model, dest_dir)
-
+    print_plan(args, sources, selected_model, dest_dir, run_stamp)
     if args.simulate:
         print()
-        print("SIMULATION RESULT: OK - no transcription executed and no output created.")
+        print("SIMULATION RESULT: OK - no directory, log, transcript or source file was modified.")
         return 0
 
-    logger, log_path = setup_logger()
+    if dest_dir is not None:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+    logger, log_paths = setup_logger(sources, run_stamp)
     logger.info("DeepEcho transcription started")
-    logger.info("Version=%s model=%s language=%s device=%s compute_type=%s",
-                VERSION, args.model, args.language, args.device, args.compute_type)
+    logger.info("Version=%s run_stamp=%s model=%s language=%s device=%s compute_type=%s",
+                VERSION, run_stamp, args.model, args.language, args.device, args.compute_type)
     logger.info("Sources=%s", [str(p) for p in sources])
 
     print()
-    print(f"Runtime log         : {log_path}")
+    print("Runtime log(s):")
+    for log_path in log_paths:
+        print(f"  {log_path}")
 
     try:
-        model, selected_model = load_model(args)
+        model, selected_model, pyav_compat_active = load_model(args)
     except Exception as exc:
         logger.exception("Model load failed")
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
+
+    if pyav_compat_active:
+        print("PyAV compatibility  : ON (PyAV 19+ metadata_errors workaround)")
+        logger.info("PyAV 19+ metadata_errors compatibility shim active")
 
     language = None if str(args.language).lower() == "auto" else args.language
     overall_rc = 0
@@ -738,14 +739,12 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print(f"[{index}/{len(sources)}] Transcribing: {source}")
         logger.info("Transcribing source=%s", source)
-
-        paths = output_paths(source, dest_dir)
+        paths = output_paths(source, dest_dir, run_stamp)
 
         try:
             with tempfile.TemporaryDirectory(prefix="deepecho_transcribe_") as temp_name:
                 temp_dir = Path(temp_name)
                 audio_source = preprocess_audio(source, args, temp_dir)
-
                 segments, info = model.transcribe(
                     str(audio_source),
                     language=language,
@@ -755,18 +754,15 @@ def main(argv: list[str] | None = None) -> int:
                     word_timestamps=False,
                     log_progress=True,
                 )
-
                 segment_count, last_end = write_outputs(
                     source=source,
                     paths=paths,
                     segments=segments,
                     timestamps=args.timestamps,
-                    force=args.force,
                 )
 
                 detected_language = getattr(info, "language", None)
                 duration = getattr(info, "duration", None)
-
                 print(f"Segments            : {segment_count}")
                 if detected_language:
                     print(f"Language            : {detected_language}")
@@ -780,10 +776,10 @@ def main(argv: list[str] | None = None) -> int:
                 print("RESULT              : OK")
 
                 logger.info(
-                    "Completed source=%s segments=%s detected_language=%s duration=%s",
+                    "Completed source=%s segments=%s detected_language=%s duration=%s outputs=%s",
                     source, segment_count, detected_language, duration,
+                    [str(paths.timestamp_md), str(paths.plain_md), str(paths.plain_txt)],
                 )
-
         except subprocess.CalledProcessError as exc:
             overall_rc = 1
             logger.exception("FFmpeg preprocessing failed for %s", source)
@@ -793,9 +789,10 @@ def main(argv: list[str] | None = None) -> int:
             logger.exception("Transcription failed for %s", source)
             print(f"ERROR: transcription failed for {source}: {exc}", file=sys.stderr)
 
+    logger.info("DeepEcho transcription finished rc=%s", overall_rc)
     print()
     print("TRANSCRIPTION RESULT: " + ("OK" if overall_rc == 0 else "ERROR"))
-    print(f"Log                 : {log_path}")
+    print(f"Run timestamp       : {run_stamp}")
     return overall_rc
 
 

@@ -35,3 +35,11 @@ secrets/
 .secrets
 .old/
 .zip/
+.VENV/
+venv/
+.logs/
+.exports/
+.export/
+.transcription/
+__pycache__/
+*.pyc

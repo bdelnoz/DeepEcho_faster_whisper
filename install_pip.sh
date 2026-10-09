@@ -4,21 +4,22 @@
 # SCRIPT NAME  : install_pip.sh
 # AUTHOR       : Bruno DELNOZ
 # EMAIL        : bruno.delnoz@protonmail.com
-# TARGET USAGE : Bootstrap the project Python virtual environment and requirements
-# VERSION      : v1.0.0
-# DATE         : 2026-10-09 10:46 UTC
+# TARGET USAGE : Bootstrap project Python virtual environment and requirements
+# VERSION      : V1.1.0-dev
+# DATE         : 2026-10-09 18:32 CEST
 # ==============================================================================
 # CHANGELOG:
-#   v1.0.0 – 2026-10-09 10:46 UTC – Bruno DELNOZ
-#       ADDED:
+#   V1.1.0-dev - 2026-10-09 18:32 CEST - Bruno DELNOZ
+#       CHANGED:
+#       - Validation candidate; not a release tag.
+#       - Real bootstrap/purge actions now log to ./logs/ in the repository.
+#       - Log names use *-YYYYMMDD-HHMM-SS.log.
+#       - Installer now ensures required runtime exclusions exist in .gitignore.
+#       - .gitignore handling is additive only: no line is removed or deduplicated.
+#       - Existing duplicate .gitignore lines are intentionally preserved.
+#       - requirements.txt remains automatically created/preserved by this stage.
+#   V1.0.0 - 2026-10-09 10:46 UTC - Bruno DELNOZ
 #       - Initial Faster-Whisper Python bootstrap installer.
-#       - Checks free disk space on the current directory filesystem before work.
-#       - Creates the project-local .venv virtual environment.
-#       - Upgrades pip, setuptools and wheel inside .venv only.
-#       - Creates requirements.txt when absent and ensures faster-whisper is listed (official release 1.2.1).
-#       - Uses --no-cache-dir to avoid filling the user pip cache unnecessarily.
-#       - Adds SOLO CLI controls: help, exec, prerequis, install, simulate,
-#         changelog and purge.
 # ==============================================================================
 
 set -Eeuo pipefail
@@ -27,26 +28,46 @@ IFS=$'\n\t'
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 RUN_DIR="$(pwd -P)"
-VERSION="v1.0.0"
-VERSION_DATE="2026-10-09 10:46 UTC"
+VERSION="V1.1.0-dev"
+VERSION_DATE="2026-10-09 18:32 CEST"
 AUTHOR="Bruno DELNOZ"
 EMAIL="bruno.delnoz@protonmail.com"
 VENV_DIR="${SCRIPT_DIR}/.venv"
 REQUIREMENTS_FILE="${SCRIPT_DIR}/requirements.txt"
+GITIGNORE_FILE="${SCRIPT_DIR}/.gitignore"
+LOG_DIR="${SCRIPT_DIR}/logs"
 MIN_FREE_MB=4096
+LOG_FILE=""
+
+GITIGNORE_REQUIRED=(
+    ".venv/"
+    ".VENV/"
+    "venv/"
+    "models/"
+    ".zip/"
+    ".old/"
+    ".logs/"
+    "logs/"
+    ".exports/"
+    ".export/"
+    ".transcription/"
+    "__pycache__/"
+    "*.pyc"
+    "*.log"
+)
 
 show_help() {
-    cat <<EOF_HELP
+    cat <<EOF
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ${SCRIPT_NAME} – ${VERSION} – ${VERSION_DATE}
+  ${SCRIPT_NAME} - ${VERSION} - ${VERSION_DATE}
   Author : ${AUTHOR} <${EMAIL}>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-DESCRIPTION:
+DESCRIPTION
   Bootstrap the Python environment used by DeepEcho_faster_whisper.
-  This script must be executed before install.sh.
+  This script must be executed before install.sh on a fresh checkout.
 
-USAGE:
+USAGE
   ./${SCRIPT_NAME} --help
   ./${SCRIPT_NAME} --prerequis
   ./${SCRIPT_NAME} --simulate
@@ -55,62 +76,63 @@ USAGE:
   ./${SCRIPT_NAME} --purge
   ./${SCRIPT_NAME} --changelog
 
-ACTIONS:
+ACTIONS
   --exec,       -exe   Run the bootstrap action. Equivalent to --install.
-  --simulate,   -s     Show the bootstrap operations without modifying files.
-  --prerequis,  -pr    Check prerequisites and free disk space.
-  --install,    -i     Create/update .venv and requirements.txt.
+  --simulate,   -s     Show bootstrap operations without modifying files.
+  --prerequis,  -pr    Check prerequisites and free disk space; read-only.
+  --install,    -i     Create/update .venv, .gitignore and requirements.txt.
   --changelog,  -ch    Display the complete internal changelog.
-  --purge,      -pu    Remove only the project .venv created by this script.
-  --help,       -h     Display this help.
+  --purge,      -pu    Remove only the project .venv; preserve requirements/logs.
+  --help,       -h     Display this help and perform no action.
 
-DEFAULTS:
+DEFAULTS
   Project directory : ${SCRIPT_DIR}
   Virtualenv        : ${VENV_DIR}
   Requirements      : ${REQUIREMENTS_FILE}
+  Git ignore        : ${GITIGNORE_FILE}
+  Runtime logs      : ${LOG_DIR}/
+  Log naming        : install_pip-${VERSION}-YYYYMMDD-HHMM-SS.log
   Minimum free disk : ${MIN_FREE_MB} MiB
   Disk check target : current directory (.) = ${RUN_DIR}
   pip cache         : disabled during bootstrap (--no-cache-dir)
 
-FILES GENERATED:
-  ${VENV_DIR}/
-  ${REQUIREMENTS_FILE}   (created only if absent; preserved otherwise)
+AUTOMATION
+  - Real install/exec actions create/update all required local runtime pieces.
+  - .gitignore is extended only; existing lines and duplicates are never removed.
+  - requirements.txt is created automatically when missing and preserved otherwise.
+  - No argument, --help, --prerequis and --simulate do not create logs or files.
 
-IMPORTANT BEHAVIOR:
-  - No argument displays this help and performs no installation.
-  - --prerequis is read-only.
-  - --simulate performs no modification.
-  - Faster-Whisper itself is installed later by install.sh.
-  - The virtual environment is always project-local and isolated.
-
-EXAMPLES:
+EXAMPLES
   ./${SCRIPT_NAME} --prerequis
   ./${SCRIPT_NAME} --simulate
   ./${SCRIPT_NAME} --install
   ./${SCRIPT_NAME} --exec
   ./${SCRIPT_NAME} --changelog
-EOF_HELP
+  ./${SCRIPT_NAME} --purge
+EOF
 }
 
 show_changelog() {
-    cat <<'EOF_CHANGELOG'
+    cat <<'EOF'
 # install_pip.sh changelog
 
-## v1.0.0 – 2026-10-09 10:46 UTC – Bruno DELNOZ
+## V1.1.0-dev - 2026-10-09 18:32 CEST - Bruno DELNOZ
+- CHANGED: Validation candidate; not a release tag.
+- ADDED: Repository-local ./logs/ for real bootstrap and purge actions.
+- ADDED: Timestamped log naming: install_pip-V1.1.0-dev-YYYYMMDD-HHMM-SS.log.
+- ADDED: Automatic additive .gitignore maintenance.
+- PRESERVED: Existing .gitignore lines and duplicate lines are never removed.
+- PRESERVED: Automatic requirements.txt creation/preservation.
+- PRESERVED: Project-local .venv only; no system-wide pip.
+
+## V1.0.0 - 2026-10-09 10:46 UTC - Bruno DELNOZ
 - ADDED: Initial Faster-Whisper Python bootstrap installer.
-- ADDED: Free-space check on the current directory filesystem.
-- ADDED: Project-local .venv creation.
-- ADDED: pip/setuptools/wheel bootstrap inside .venv.
-- ADDED: requirements.txt creation/preservation with faster-whisper==1.2.1 requirement.
-- ADDED: --no-cache-dir to avoid persistent pip cache growth.
-- ADDED: --help/-h, --exec/-exe, --prerequis/-pr, --install/-i,
-  --simulate/-s, --changelog/-ch and --purge/-pu.
-EOF_CHANGELOG
+- ADDED: Free-space check, .venv, pip tooling and requirements.txt management.
+EOF
 }
 
 print_step() {
-    local current="$1"
-    local total="$2"
+    local current="$1" total="$2"
     shift 2
     printf '[%s/%s] %s\n' "$current" "$total" "$*"
 }
@@ -118,6 +140,36 @@ print_step() {
 fail() {
     printf 'ERROR: %s\n' "$*" >&2
     exit 1
+}
+
+stamp_now() {
+    date '+%Y%m%d-%H%M-%S'
+}
+
+setup_log() {
+    mkdir -p -- "$LOG_DIR"
+    LOG_FILE="${LOG_DIR}/install_pip-${VERSION}-$(stamp_now).log"
+    exec > >(tee -a "$LOG_FILE") 2>&1
+    printf 'LOG FILE: %s\n' "$LOG_FILE"
+}
+
+ensure_gitignore() {
+    local entry added=0
+    if [[ ! -f "$GITIGNORE_FILE" ]]; then
+        : > "$GITIGNORE_FILE"
+        printf 'Created: %s\n' "$GITIGNORE_FILE"
+    fi
+
+    for entry in "${GITIGNORE_REQUIRED[@]}"; do
+        if grep -Fqx -- "$entry" "$GITIGNORE_FILE" 2>/dev/null; then
+            printf 'Preserved .gitignore rule: %s\n' "$entry"
+        else
+            printf '%s\n' "$entry" >> "$GITIGNORE_FILE"
+            printf 'Added .gitignore rule    : %s\n' "$entry"
+            added=$((added + 1))
+        fi
+    done
+    printf '.gitignore additions     : %s\n' "$added"
 }
 
 python_version_ok() {
@@ -154,34 +206,29 @@ check_venv_support() {
 
     python3 -c 'import venv' >/dev/null 2>&1 || return 1
     python3 -m venv --help >/dev/null 2>&1 || return 1
-    return 0
 }
 
 check_prerequisites() {
-    local failures=0
-    local free_run free_project fs_run fs_project
+    local failures=0 free_run free_project fs_run fs_project
+    printf 'PREREQUISITES\n%s\n' '------------------------------------------------------------'
 
-    printf 'PREREQUISITES\n'
-    printf '%s\n' '------------------------------------------------------------'
-
-    if command -v bash >/dev/null 2>&1; then
-        printf 'PRESENT : bash              : %s\n' "$(bash --version | head -n1)"
-    else
-        printf 'MISSING : bash              : install bash\n'
-        failures=$((failures + 1))
-    fi
+    for cmd in bash python3 df awk grep sed tee date; do
+        if command -v "$cmd" >/dev/null 2>&1; then
+            printf 'PRESENT : %-17s: %s\n' "$cmd" "$(command -v "$cmd")"
+        else
+            printf 'MISSING : %-17s: required by %s\n' "$cmd" "$SCRIPT_NAME"
+            failures=$((failures + 1))
+        fi
+    done
 
     if command -v python3 >/dev/null 2>&1; then
         printf 'PRESENT : python3           : %s\n' "$(python3 --version 2>&1)"
         if python_version_ok; then
             printf 'PRESENT : Python >= 3.9     : compatible\n'
         else
-            printf 'MISSING : Python >= 3.9     : Faster-Whisper requires Python 3.9+\n'
+            printf 'MISSING : Python >= 3.9     : required\n'
             failures=$((failures + 1))
         fi
-    else
-        printf 'MISSING : python3           : sudo apt install python3\n'
-        failures=$((failures + 1))
     fi
 
     if command -v python3 >/dev/null 2>&1 && check_venv_support; then
@@ -191,53 +238,37 @@ check_prerequisites() {
         failures=$((failures + 1))
     fi
 
-    for cmd in df awk grep sed; do
-        if command -v "$cmd" >/dev/null 2>&1; then
-            printf 'PRESENT : %-17s: %s\n' "$cmd" "$(command -v "$cmd")"
-        else
-            printf 'MISSING : %-17s: required by %s\n' "$cmd" "$SCRIPT_NAME"
-            failures=$((failures + 1))
-        fi
-    done
-
     free_run="$(free_mb_for_path "." || true)"
     fs_run="$(filesystem_for_path "." || true)"
-    if [[ "$free_run" =~ ^[0-9]+$ ]]; then
-        if (( free_run >= MIN_FREE_MB )); then
-            printf 'PRESENT : free space on .   : %s MiB on %s\n' "$free_run" "${fs_run:-unknown}"
-        else
-            printf 'MISSING : free space on .   : %s MiB available; %s MiB required\n' "$free_run" "$MIN_FREE_MB"
-            failures=$((failures + 1))
-        fi
+    if [[ "$free_run" =~ ^[0-9]+$ ]] && (( free_run >= MIN_FREE_MB )); then
+        printf 'PRESENT : free space on .   : %s MiB on %s\n' "$free_run" "${fs_run:-unknown}"
     else
-        printf 'MISSING : free space on .   : unable to determine with df\n'
+        printf 'MISSING : free space on .   : %s MiB; %s MiB required\n' "${free_run:-unknown}" "$MIN_FREE_MB"
         failures=$((failures + 1))
     fi
 
     free_project="$(free_mb_for_path "$SCRIPT_DIR" || true)"
     fs_project="$(filesystem_for_path "$SCRIPT_DIR" || true)"
     if [[ "$SCRIPT_DIR" != "$RUN_DIR" ]] || [[ "$fs_project" != "$fs_run" ]]; then
-        if [[ "$free_project" =~ ^[0-9]+$ ]]; then
-            if (( free_project >= MIN_FREE_MB )); then
-                printf 'PRESENT : project free space: %s MiB on %s\n' "$free_project" "${fs_project:-unknown}"
-            else
-                printf 'MISSING : project free space: %s MiB available; %s MiB required\n' "$free_project" "$MIN_FREE_MB"
-                failures=$((failures + 1))
-            fi
+        if [[ "$free_project" =~ ^[0-9]+$ ]] && (( free_project >= MIN_FREE_MB )); then
+            printf 'PRESENT : project free space: %s MiB on %s\n' "$free_project" "${fs_project:-unknown}"
         else
-            printf 'MISSING : project free space: unable to determine with df\n'
+            printf 'MISSING : project free space: %s MiB; %s MiB required\n' "${free_project:-unknown}" "$MIN_FREE_MB"
             failures=$((failures + 1))
         fi
     fi
 
-    if [[ -f "${SCRIPT_DIR}/.gitignore" ]]; then
-        if grep -Eq '^[[:space:]]*\.venv/?[[:space:]]*$' "${SCRIPT_DIR}/.gitignore"; then
-            printf 'PRESENT : .gitignore .venv  : excluded\n'
-        else
-            printf 'NOTICE  : .gitignore .venv  : .venv/ is not currently excluded\n'
-        fi
+    if [[ -f "$GITIGNORE_FILE" ]]; then
+        printf 'PRESENT : .gitignore        : %s\n' "$GITIGNORE_FILE"
+        for entry in "${GITIGNORE_REQUIRED[@]}"; do
+            if grep -Fqx -- "$entry" "$GITIGNORE_FILE"; then
+                printf 'PRESENT : gitignore rule    : %s\n' "$entry"
+            else
+                printf 'NOTICE  : gitignore missing : %s (added by real install)\n' "$entry"
+            fi
+        done
     else
-        printf 'NOTICE  : .gitignore        : not found beside script\n'
+        printf 'NOTICE  : .gitignore        : missing; real install will create/extend it\n'
     fi
 
     printf '%s\n' '------------------------------------------------------------'
@@ -245,18 +276,17 @@ check_prerequisites() {
         printf 'RESULT  : OK\n'
         return 0
     fi
-
     printf 'RESULT  : FAIL (%s prerequisite issue(s))\n' "$failures"
     return 1
 }
 
 ensure_requirements() {
     if [[ ! -f "$REQUIREMENTS_FILE" ]]; then
-        cat > "$REQUIREMENTS_FILE" <<'EOF_REQ'
+        cat > "$REQUIREMENTS_FILE" <<'EOF'
 # DeepEcho_faster_whisper runtime requirements
 # Installed inside the project-local .venv by install.sh.
 faster-whisper==1.2.1
-EOF_REQ
+EOF
         printf 'Created: %s\n' "$REQUIREMENTS_FILE"
         return 0
     fi
@@ -271,14 +301,19 @@ EOF_REQ
 }
 
 run_install() {
-    local total=5
-
+    local total=7
+    ensure_gitignore
+    setup_log
+    printf 'DeepEcho bootstrap started: %s\n' "$(date -Is)"
     check_prerequisites || fail "Prerequisites are not satisfied. Run ./${SCRIPT_NAME} --prerequis for details."
 
     print_step 1 "$total" "Checking target paths"
     [[ "$VENV_DIR" == "${SCRIPT_DIR}/.venv" ]] || fail "Unsafe virtualenv path: $VENV_DIR"
 
-    print_step 2 "$total" "Creating project virtual environment when absent"
+    print_step 2 "$total" "Extending .gitignore without removing existing lines"
+    ensure_gitignore
+
+    print_step 3 "$total" "Creating project virtual environment when absent"
     if [[ -d "$VENV_DIR" ]]; then
         [[ -x "$VENV_DIR/bin/python" ]] || fail "Existing .venv is incomplete: $VENV_DIR/bin/python is missing"
         printf 'Preserved: %s\n' "$VENV_DIR"
@@ -287,13 +322,13 @@ run_install() {
         printf 'Created: %s\n' "$VENV_DIR"
     fi
 
-    print_step 3 "$total" "Bootstrapping pip tooling inside .venv"
+    print_step 4 "$total" "Bootstrapping pip tooling inside .venv"
     "$VENV_DIR/bin/python" -m pip install --no-cache-dir --upgrade pip setuptools wheel
 
-    print_step 4 "$total" "Creating or preserving requirements.txt"
+    print_step 5 "$total" "Creating or preserving requirements.txt"
     ensure_requirements
 
-    print_step 5 "$total" "Validating virtual environment"
+    print_step 6 "$total" "Validating virtual environment"
     "$VENV_DIR/bin/python" -m pip --version
     "$VENV_DIR/bin/python" - <<'PY'
 import sys
@@ -301,34 +336,42 @@ print(f"Virtualenv Python: {sys.version.split()[0]}")
 print(f"Executable: {sys.executable}")
 PY
 
+    print_step 7 "$total" "Bootstrap validation complete"
     printf '\nBOOTSTRAP RESULT: OK\n'
+    printf 'Log         : %s\n' "$LOG_FILE"
     printf 'Next command: ./install.sh --prerequis\n'
     printf 'Then        : ./install.sh --install\n'
 }
 
 run_simulate() {
     check_prerequisites || true
-    cat <<EOF_SIM
+    cat <<EOF
 
-SIMULATION ONLY — no file will be modified.
-1. Validate ${VENV_DIR}
-2. Create ${VENV_DIR} with python3 -m venv if absent
-3. Upgrade pip/setuptools/wheel inside ${VENV_DIR} with --no-cache-dir
-4. Create ${REQUIREMENTS_FILE} if absent
-5. Preserve existing requirements and add faster-whisper==1.2.1 only when missing
+SIMULATION ONLY - no file will be modified and no log will be created.
+1. Validate target paths and free space
+2. Extend ${GITIGNORE_FILE} only with missing required runtime exclusions
+3. Create ${VENV_DIR} if absent
+4. Upgrade pip/setuptools/wheel inside ${VENV_DIR} with --no-cache-dir
+5. Create/preserve ${REQUIREMENTS_FILE} and ensure faster-whisper==1.2.1
 6. Validate .venv Python and pip
-EOF_SIM
+7. A real run would log under ${LOG_DIR}/ with YYYYMMDD-HHMM-SS
+EOF
 }
 
 run_purge() {
+    ensure_gitignore
+    setup_log
+    ensure_gitignore
     [[ "$VENV_DIR" == "${SCRIPT_DIR}/.venv" ]] || fail "Unsafe virtualenv path: $VENV_DIR"
     if [[ ! -e "$VENV_DIR" ]]; then
         printf 'Nothing to purge: %s does not exist.\n' "$VENV_DIR"
-        return 0
+    else
+        rm -rf -- "$VENV_DIR"
+        printf 'PURGED: %s\n' "$VENV_DIR"
     fi
-    rm -rf -- "$VENV_DIR"
-    printf 'PURGED: %s\n' "$VENV_DIR"
     printf 'Preserved: %s\n' "$REQUIREMENTS_FILE"
+    printf 'Preserved: %s\n' "$LOG_DIR"
+    printf 'Log      : %s\n' "$LOG_FILE"
 }
 
 main() {
@@ -336,33 +379,17 @@ main() {
         show_help
         return 0
     fi
-
     if (( $# != 1 )); then
         fail "Exactly one control action is accepted. Run ./${SCRIPT_NAME} --help."
     fi
-
     case "$1" in
-        --help|-h)
-            show_help
-            ;;
-        --changelog|-ch)
-            show_changelog
-            ;;
-        --prerequis|-pr)
-            check_prerequisites
-            ;;
-        --simulate|-s)
-            run_simulate
-            ;;
-        --install|-i|--exec|-exe)
-            run_install
-            ;;
-        --purge|-pu)
-            run_purge
-            ;;
-        *)
-            fail "Unknown option: $1. Run ./${SCRIPT_NAME} --help."
-            ;;
+        --help|-h) show_help ;;
+        --changelog|-ch) show_changelog ;;
+        --prerequis|-pr) check_prerequisites ;;
+        --simulate|-s) run_simulate ;;
+        --install|-i|--exec|-exe) run_install ;;
+        --purge|-pu) run_purge ;;
+        *) fail "Unknown option: $1. Run ./${SCRIPT_NAME} --help." ;;
     esac
 }
 
