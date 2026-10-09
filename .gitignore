@@ -1,5 +1,8 @@
 .zip/
 .old/
+models/
+.venv/
+
 
 
 # PROJECT SPECIFIC
