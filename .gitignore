@@ -1,3 +1,7 @@
+.zip/
+.old/
+
+
 # PROJECT SPECIFIC
 uploads
 *.pid

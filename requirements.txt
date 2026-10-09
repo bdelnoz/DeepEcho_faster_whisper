@@ -1,0 +1,3 @@
+# DeepEcho_faster_whisper runtime requirements
+# Installed inside the project-local .venv by install.sh.
+faster-whisper==1.2.1
