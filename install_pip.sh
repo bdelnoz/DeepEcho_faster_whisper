@@ -5,10 +5,14 @@
 # AUTHOR       : Bruno DELNOZ
 # EMAIL        : bruno.delnoz@protonmail.com
 # TARGET USAGE : Bootstrap project Python virtual environment and requirements
-# VERSION      : V1.1.0-dev
-# DATE         : 2026-10-09 18:32 CEST
+# VERSION      : V2.0.0
+# DATE         : 2026-10-10 04:20 CEST
 # ==============================================================================
 # CHANGELOG:
+#   V2.0.0 - 2026-10-10 04:20 CEST - Bruno DELNOZ
+#       RELEASE:
+#       - Promoted the validated source to major release V2.0.0.
+#       - Synchronized CLI/log version metadata; no behavior changes.
 #   V1.1.0-dev - 2026-10-09 18:32 CEST - Bruno DELNOZ
 #       CHANGED:
 #       - Validation candidate; not a release tag.
@@ -28,8 +32,8 @@ IFS=$'\n\t'
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 RUN_DIR="$(pwd -P)"
-VERSION="V1.1.0-dev"
-VERSION_DATE="2026-10-09 18:32 CEST"
+VERSION="V2.0.0"
+VERSION_DATE="2026-10-10 04:20 CEST"
 AUTHOR="Bruno DELNOZ"
 EMAIL="bruno.delnoz@protonmail.com"
 VENV_DIR="${SCRIPT_DIR}/.venv"

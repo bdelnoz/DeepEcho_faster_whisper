@@ -1,4 +1,4 @@
 # DeepEcho_faster_whisper runtime requirements
-# Project validation candidate: V1.1.0-dev
+# Current project release: V2.0.0
 # Created/preserved automatically by install_pip.sh and installed by install.sh.
 faster-whisper==1.2.1

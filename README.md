@@ -3,10 +3,10 @@ DOCUMENT INFORMATION
 Document Name: README.md
 Author: Bruno DELNOZ
 Email: bruno.delnoz@protonmail.com
-Version: v1.1.0-dev
-Date / Time: 2026-10-09 18:32 CEST
+Version: v2.0.0
+Date / Time: 2026-10-10 04:20 CEST
 Project: DeepEcho_faster_whisper
-Status: Validation candidate; not a release tag.
+Status: Major stable release v2.0.0; source package ready for Git push.
 Short description: Complete project overview for installation, model management and Faster-Whisper transcription.
 -->
 
@@ -14,19 +14,20 @@ Short description: Complete project overview for installation, model management 
 
 `DeepEcho_faster_whisper` is a local Faster-Whisper transcription project built around a strict separation between reusable repository code and private runtime data.
 
-This validation candidate now includes the complete working layers for:
+The V2.0.0 major release includes the complete working layers for:
 
 - Python environment bootstrap;
 - Faster-Whisper runtime installation;
 - local model management;
-- single-file and batch transcription;
+- single-file, batch and optional recursive MP4 transcription;
 - raw transcript generation;
 - timestamped transcript generation;
 - optional audio normalization/amplification;
 - source-local runtime logs;
+- invariant per-source Processing-Time benchmark reports for model comparison;
 - automatic repository hygiene through additive `.gitignore` maintenance.
 
-This package is a **validation build**. It is not yet a tagged release. The user validates the behavior before any final release version is declared.
+This package is **V2.0.0**, the first major stable project release. It preserves the V1.1.4-dev implementation without introducing any new transcription or storage features. A repository push is a separate action controlled by the user.
 
 ## Current validated runtime baseline
 
@@ -58,6 +59,7 @@ DeepEcho_faster_whisper/
 ├── CHANGELOG.md
 ├── INSTALL.md
 ├── SPECIFICATIONS.md
+├── SPECIFICATIONS.pdf
 └── EXAMPLES.md
 ```
 
@@ -82,12 +84,13 @@ Source-media directories may additionally contain:
 ```text
 media-directory/
 ├── source.mp4
-├── source.mp4.transcription_timestamps-YYYYMMDD-HHMM-SS.md
+├── source.mp4.transcription_timestamps-MODEL-YYYYMMDD-HHMM-SS.md
 ├── .transcription/
-│   ├── source.mp4.transcription-YYYYMMDD-HHMM-SS.md
-│   └── source.mp4.transcript-YYYYMMDD-HHMM-SS.txt
+│   ├── source.mp4.transcription-MODEL-YYYYMMDD-HHMM-SS.md
+│   └── source.mp4.transcript-MODEL-YYYYMMDD-HHMM-SS.txt
 └── .logs/
-    └── transcribe-VERSION-YYYYMMDD-HHMM-SS.log
+    ├── transcribe-VERSION-YYYYMMDD-HHMM-SS.log
+    └── source.mp4-Processing-Time-MODEL-YYYYMMDD-HHMM-SS.md
 ```
 
 ## Installation architecture
@@ -138,8 +141,8 @@ See `INSTALL.md` for the complete workflow.
 Real installer actions create repository-local logs:
 
 ```text
-./logs/install_pip-V1.1.0-dev-YYYYMMDD-HHMM-SS.log
-./logs/install-V1.1.0-dev-YYYYMMDD-HHMM-SS.log
+./logs/install_pip-V2.0.0-YYYYMMDD-HHMM-SS.log
+./logs/install-V2.0.0-YYYYMMDD-HHMM-SS.log
 ```
 
 The `logs/` directory and `*.log` files are excluded from Git by `.gitignore`.
@@ -204,6 +207,18 @@ The list reports each runtime model as one of:
 - `INSTALLED`;
 - `INCOMPLETE`;
 - `not installed`.
+
+### Show model download sizes before downloading
+
+Use the live size view:
+
+```bash
+./getModels.sh --exec --list --size
+```
+
+This performs a read-only Hugging Face metadata query and does **not** download model payloads. The `DOWNLOAD SIZE` column is calculated from the same file patterns requested by Faster-Whisper (`config.json`, `preprocessor_config.json`, `model.bin`, `tokenizer.json`, and `vocabulary.*`). A `LOCAL SIZE` column is also shown when a local model directory exists.
+
+This allows free-space planning before downloading large models. Internet access is required for the live remote-size lookup.
 
 ### Download one model
 
@@ -322,14 +337,26 @@ The transcription CLI supports:
 Examples:
 
 ```bash
-./transcribe.sh --simulate --model tiny --source video.mp4
-./transcribe.sh --simulate --model tiny --source '*.mp4'
-./transcribe.sh --simulate --model tiny --source *.mp4
-./transcribe.sh --simulate --model tiny --source 'video with spaces.mp4'
-./transcribe.sh --simulate --model tiny --source first.mp4 'second file.mp4'
+./transcribe.sh --simulate --source video.mp4 --model tiny
+./transcribe.sh --simulate --source '*.mp4' --model tiny
+./transcribe.sh --simulate --source *.mp4 --model tiny
+./transcribe.sh --simulate --source 'video with spaces.mp4' --model tiny
+./transcribe.sh --simulate --source first.mp4 'second file.mp4' --model tiny
 ```
 
-The shell-expansion bug that previously caused additional expanded filenames to become `Unknown argument` errors is fixed in the current validation build.
+The shell-expansion bug that previously caused additional expanded filenames to become `Unknown argument` errors is fixed in the current release.
+
+## Recursive MP4 scan (`--recursive`)
+
+`--recursive` (aliases `--recursif`, `--récursif`, `--récursive`) scans **all `.mp4` files under the current working directory**, including nested folders, regardless of how many top-level files Bash expanded from `--source *.mp4`. The scan is case-insensitive for `.mp4` extensions, skips symlinked directories and files, sorts paths deterministically and deduplicates results. All discovered files are processed **sequentially in a single invocation** (not as six parallel transcription processes).
+
+```bash
+./transcribe.sh --exec --source *.mp4 --recursive --model large-v3
+./transcribe.sh --simulate --source '*.mp4' --recursive --model tiny
+./transcribe.sh --exec --source-dir /media/videos --recursive --model medium
+```
+
+When recursive mode is enabled, the `--source` file arguments are accepted for command compatibility, **but they do not filter the recursive scan**: every MP4 under the scan root is selected. `--source-dir` explicitly overrides that root; otherwise it is the working directory, not the script/repository directory. Without `--recursive`, the preexisting exact-file/glob behavior is unchanged. Generated transcripts remain next to each source or in its source-local `.transcription/` directory; runtime logs and benchmark reports remain source-local under `.logs/`. No MP4 or personal data is copied into the repository. The simulation creates no files.
 
 ## Raw transcription policy
 
@@ -347,7 +374,7 @@ Only surrounding whitespace around model segments is normalized when output line
 
 ## Timestamped output policy
 
-Every generated transcript and runtime log receives one run timestamp in the form:
+Every generated transcript, Processing-Time report and runtime log receives one run timestamp in the form:
 
 ```text
 YYYYMMDD-HHMM-SS
@@ -359,7 +386,7 @@ For example:
 20261009-1832-45
 ```
 
-All files generated from one invocation use the same run timestamp.
+All files generated from one invocation use the same run timestamp. Transcript filenames and Processing-Time reports also include the selected model immediately before that timestamp.
 
 This design prevents ordinary runs from overwriting prior output.
 
@@ -376,10 +403,11 @@ For a source such as:
 the default outputs are:
 
 ```text
-/media/evidence/2011.mp4.transcription_timestamps-YYYYMMDD-HHMM-SS.md
-/media/evidence/.transcription/2011.mp4.transcription-YYYYMMDD-HHMM-SS.md
-/media/evidence/.transcription/2011.mp4.transcript-YYYYMMDD-HHMM-SS.txt
-/media/evidence/.logs/transcribe-V1.1.0-dev-YYYYMMDD-HHMM-SS.log
+/media/evidence/2011.mp4.transcription_timestamps-MODEL-YYYYMMDD-HHMM-SS.md
+/media/evidence/.transcription/2011.mp4.transcription-MODEL-YYYYMMDD-HHMM-SS.md
+/media/evidence/.transcription/2011.mp4.transcript-MODEL-YYYYMMDD-HHMM-SS.txt
+/media/evidence/.logs/transcribe-V2.0.0-YYYYMMDD-HHMM-SS.log
+/media/evidence/.logs/2011.mp4-Processing-Time-MODEL-YYYYMMDD-HHMM-SS.md
 ```
 
 The timestamped Markdown deliberately remains beside the source file.
@@ -387,6 +415,29 @@ The timestamped Markdown deliberately remains beside the source file.
 Plain Markdown and plain TXT deliberately live under `.transcription/`.
 
 Runtime transcription logs deliberately live under `.logs/`.
+
+## Processing-Time benchmark reports
+
+Every real source transcription creates a separate Markdown benchmark report under the source-local `.logs/` directory. It is deliberately separate from the normal operational `.log`.
+
+Naming:
+
+```text
+<source-name>-Processing-Time-<model>-YYYYMMDD-HHMM-SS.md
+```
+
+Example:
+
+```text
+2011.mp4-Processing-Time-tiny-20261009-2208-05.md
+2011.mp4-Processing-Time-large-v3-20261009-2212-41.md
+```
+
+The report is a fixed comparison template. Every model uses the same title, section order, field names, units and table structure; unavailable values remain present as `N/A`. Only the values change. This makes two reports directly comparable side by side while scrolling.
+
+The fixed timing section records media duration, model load time, processing start/end, preprocessing time, transcription/output processing time, total source processing time, real-time factor and processing speed.
+
+The normal runtime log remains separate and its first record is the exact command/argv that launched the transcription. For shell-expanded globs, that record necessarily reflects the argv after shell expansion.
 
 ## Multi-directory batches
 
@@ -403,7 +454,7 @@ If one transcription command includes sources from different directories:
 Example:
 
 ```bash
-./transcribe.sh --exec --model tiny --source video.mp4 --dest-dir /media/results
+./transcribe.sh --exec --source video.mp4 --dest-dir /media/results --model tiny
 ```
 
 Plain outputs then go under:
@@ -425,7 +476,7 @@ VAD is OFF by default.
 Enable it explicitly:
 
 ```bash
-./transcribe.sh --exec --model tiny --source video.mp4 --vad
+./transcribe.sh --exec --source video.mp4 --vad --model tiny
 ```
 
 ### Normalization
@@ -433,19 +484,19 @@ Enable it explicitly:
 Enable temporary FFmpeg loudness normalization explicitly:
 
 ```bash
-./transcribe.sh --exec --model tiny --source video.mp4 --normalize
+./transcribe.sh --exec --source video.mp4 --normalize --model tiny
 ```
 
 ### Amplification factor
 
 ```bash
-./transcribe.sh --exec --model tiny --source video.mp4 --amplify 2
+./transcribe.sh --exec --source video.mp4 --amplify 2 --model tiny
 ```
 
 ### Amplification in dB
 
 ```bash
-./transcribe.sh --exec --model tiny --source video.mp4 --amplify-db 6
+./transcribe.sh --exec --source video.mp4 --amplify-db 6 --model tiny
 ```
 
 `--amplify` and `--amplify-db` are mutually exclusive.
@@ -457,7 +508,7 @@ Preprocessing uses a temporary WAV file. The source is never modified.
 Simulation resolves the planned operation without creating transcription directories, logs or outputs:
 
 ```bash
-./transcribe.sh --simulate --model tiny --source '*.mp4'
+./transcribe.sh --simulate --source '*.mp4' --model tiny
 ```
 
 ## Prerequisite checks
@@ -468,7 +519,7 @@ Simulation resolves the planned operation without creating transcription directo
 
 This validates the local runtime without starting a transcription.
 
-## Output formats in this validation build
+## Output formats in this release
 
 Implemented:
 
@@ -483,18 +534,19 @@ Not implemented yet:
 - JSON;
 - speaker diarization.
 
-Speaker labels are never fabricated. Real diarization requires a separate diarization layer and remains outside this validation build.
+Speaker labels are never fabricated. Real diarization requires a separate diarization layer and remains outside this release.
 
 ## Documentation
 
 - `README.md` — project overview and common workflow;
 - `INSTALL.md` — complete automated installation/model/transcription setup workflow;
 - `SPECIFICATIONS.md` — exhaustive current functional and technical contract;
+- `SPECIFICATIONS.pdf` — complete NoXoZ.be formatted PDF edition synchronized with the Markdown;
 - `EXAMPLES.md` — command examples for every supported argument;
 - `CHANGELOG.md` — append-only project history.
 
-## Validation status
+## Release status
 
-This package is deliberately delivered as `v1.1.0-dev` because it is a major functional update that still requires user validation.
+**V2.0.0 — MAJOR STABLE RELEASE.** Based strictly on V1.1.4-dev, with no change to transcription, model-management, installer behavior, or private-data placement. Source package includes all 13 original files plus `SPECIFICATIONS.pdf`.
 
-No GitHub release/tag should be inferred from this version string.
+Git push/tag and real-media validation remain separate user-controlled operations. Future audio-optimization improvements require explicit authorization and are not included here.

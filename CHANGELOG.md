@@ -3,14 +3,85 @@ DOCUMENT INFORMATION
 Document Name: CHANGELOG.md
 Author: Bruno DELNOZ
 Email: bruno.delnoz@protonmail.com
-Version: v1.1.0-dev
-Date / Time: 2026-10-09 18:32 CEST
+Version: v2.0.0
+Date / Time: 2026-10-10 04:20 CEST
 Project: DeepEcho_faster_whisper
-Status: Validation candidate; not a release tag.
+Status: Major stable release v2.0.0; source package ready for Git push.
 Short description: Append-only project changelog.
 -->
 
 # DeepEcho_faster_whisper — Changelog
+
+## v2.0.0 — 2026-10-10 04:20 CEST — Bruno DELNOZ
+
+### MAJOR STABLE RELEASE
+
+- RELEASED: first major stable project version `V2.0.0` based strictly on the `V1.1.4-dev` source set.
+- CHANGED: synchronized current version/date/status in **all** project scripts, metadata and Markdown documents, `requirements.txt`, and appended an additive release note to `.gitignore`.
+- CHANGED: runtime installer, model manager and transcriber log/version labels now show `V2.0.0`.
+- ADDED: `SPECIFICATIONS.pdf` regenerated from the **complete current** `SPECIFICATIONS.md` using the approved NoXoZ.be layout (cover, clickable table of contents, PDF bookmarks, versioned header/footer).
+- DOCUMENTED: `SPECIFICATIONS.md` is authoritative and PDF regeneration is mandatory after future Markdown specification changes.
+- PRESERVED: V1.1.4-dev recursive MP4 scanning, sequential transcription, model management, output filenames and Processing-Time reports unchanged.
+- SECURITY: no source videos, private transcriptions or runtime media copied or staged inside the repository; rejected V1.1.3-dev recovery logic remains excluded.
+- PACKAGING: complete project ZIP with 14 files, including both specifications source and PDF; runtime artifacts excluded.
+- NOTE: actual Git push / remote release tag is performed only by the user.
+
+
+## v1.1.4-dev — 2026-10-10 04:00 CEST — Bruno DELNOZ
+
+### Recursive MP4 transcription discovery
+
+- ADDED: `--recursive`, `--recursif`, `--récursif`, and `--récursive` to `transcribe.sh` and `transcribe.py`.
+- ADDED: recursive scan from the process current working directory (`.`), or `--source-dir` if specified, including all nested MP4s.
+- FIXED: shell expansion of `--source *.mp4` no longer limits the recursive scan to only expanded top-level MP4s.
+- ADDED: deterministic ordering, duplicate suppression, `.MP4` case-insensitivity and symlink traversal exclusion in recursive mode.
+- PRESERVED: previous nonrecursive source selection, single-run sequential transcription, all output filenames/locations and Processing-Time benchmarking.
+- PRIVACY: no source-media copies, local staging, or recovery data in the code repository.
+- BASELINE: forked from v1.1.2-dev; v1.1.3-dev recovery implementation was rejected and is not included.
+- CHANGED: README, INSTALL, EXAMPLES, SPECIFICATIONS and script help/changelogs updated.
+- DEFERRED: no regeneration or packaging of `SPECIFICATIONS.pdf` until the Markdown is validated.
+- STATUS: validation candidate; not v2.0 final release.
+
+## v1.1.2-dev — 2026-10-09 22:08 CEST — Bruno DELNOZ
+
+### Transcription usability and comparison
+
+- CHANGED: `transcribe.sh` and `transcribe.py` help/examples keep `--model` last for rapid model swapping.
+- CHANGED: transcript filenames now include the selected model immediately before the run timestamp.
+- ADDED: normal transcription runtime logs start with the exact executed command/argv.
+- ADDED: one source-local `.logs/<source>-Processing-Time-<model>-<timestamp>.md` benchmark report per processed source.
+- ADDED: invariant Processing-Time report template: identical headers, field order, units and structure across models; unavailable values remain as `N/A`.
+- ADDED: media duration, model load time, preprocessing time, transcription/output time, total source time, real-time factor and processing speed measurements.
+- DEFERRED BY USER: `SPECIFICATIONS.pdf` regeneration/packaging until scripting and Markdown validation are finished. The existing PDF remains untouched.
+- CHANGED: README, INSTALL, EXAMPLES and SPECIFICATIONS synchronized with the new naming/logging/benchmark contract.
+- STATUS: Validation candidate; not a release tag.
+
+## v1.1.1-dev — 2026-10-09 21:05 CEST — Bruno DELNOZ
+
+### STATUS
+
+- Validation candidate update; still not a final release/tag.
+
+### ADDED — MODEL SIZE VISIBILITY
+
+- Added `--size` as a read-only list modifier.
+- Added `./getModels.sh --exec --list --size`.
+- Added the matching Python backend form.
+- Live remote size is queried from Hugging Face metadata without downloading model payloads.
+- Reported remote size is scoped to the exact file patterns requested by Faster-Whisper's downloader rather than blindly using whole-repository storage.
+- Local on-disk model directory size is shown beside remote download size for diagnosis of partial/corrupt downloads.
+- Normal `--exec --list` remains available without remote-size metadata lookup.
+- Size lookup failures are explicit; the scripts do not fabricate model sizes.
+
+### CHANGED — MODEL MANAGEMENT
+
+- `getModels.sh` incremented to `V1.1.1-dev`.
+- `getModels.py` incremented to `V1.1.1-dev`.
+- Existing multi-model downloads, default skip, INCOMPLETE handling and `--force` replacement remain unchanged.
+
+### DOCUMENTATION
+
+- Updated `README.md`, `INSTALL.md`, `SPECIFICATIONS.md` and `EXAMPLES.md` with the size-query workflow.
 
 ## v1.1.0-dev — 2026-10-09 18:32 CEST — Bruno DELNOZ
 

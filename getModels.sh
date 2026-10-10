@@ -6,11 +6,20 @@
 # Full Path       : ./getModels.sh
 # Author          : Bruno DELNOZ
 # Email           : bruno.delnoz@protonmail.com
-# Version         : V1.1.0-dev
-# Date / Time     : 2026-10-09 18:32 CEST
+# Version         : V2.0.0
+# Date / Time     : 2026-10-10 04:20 CEST
 # Target usage    : User-facing Faster-Whisper model manager
 #
 # CHANGELOG
+# V2.0.0 - 2026-10-10 04:20 CEST - Bruno DELNOZ
+#   - MAJOR RELEASE: version metadata synchronized at V2.0.0.
+#   - Preserved V1.1.4-dev behavior; no new runtime features.
+# V1.1.1-dev - 2026-10-09 21:05 CEST - Bruno DELNOZ
+#   - Added --size list modifier.
+#   - --exec --list --size displays live remote Faster-Whisper download sizes.
+#   - Size lookup remains read-only and downloads no model payload.
+#   - Backend also reports local on-disk size for comparison/diagnosis.
+#   - Preserved all V1.1.0-dev model-management behavior.
 # V1.1.0-dev - 2026-10-09 18:32 CEST - Bruno DELNOZ
 #   - Validation candidate; not a release tag.
 #   - Added full 19-model reference immediately before EXAMPLES in help.
@@ -23,8 +32,8 @@
 
 set -uo pipefail
 
-VERSION="V1.1.0-dev"
-DATE_TIME="2026-10-09 18:32 CEST"
+VERSION="V2.0.0"
+DATE_TIME="2026-10-09 21:05 CEST"
 AUTHOR="Bruno DELNOZ"
 EMAIL="bruno.delnoz@protonmail.com"
 
@@ -52,6 +61,7 @@ USAGE
   ./getModels.sh --help
   ./getModels.sh --prerequis
   ./getModels.sh --exec --list
+  ./getModels.sh --exec --list --size
   ./getModels.sh --simulate --download --model <NAME> [NAME ...]
   ./getModels.sh --exec --download --model <NAME> [NAME ...]
 
@@ -93,6 +103,11 @@ MODEL OPTIONS
       Remove and redownload every requested local model, even when already
       complete. Use this to replace a suspected corrupt local model.
 
+  --size
+      Valid only with --list.
+      Query live Hugging Face metadata and display the expected Faster-Whisper
+      download size for every model. No model payload is downloaded.
+
 DEFAULT STORAGE
   ${DEFAULT_MODELS_DIR}/<model-name>/
 
@@ -120,6 +135,7 @@ AVAILABLE MODEL NAMES (REFERENCE)
 EXAMPLES
   ./getModels.sh --prerequis
   ./getModels.sh --exec --list
+  ./getModels.sh --exec --list --size
   ./getModels.sh --simulate --download --model tiny
   ./getModels.sh --exec --download --model tiny
   ./getModels.sh --exec --download --model base small medium
@@ -128,6 +144,7 @@ EXAMPLES
   ./getModels.sh --exec --download --model large-v3 --models-dir /data/models
 
 NOTES
+  - --list --size requires network access to Hugging Face metadata.
   - Existing complete models are skipped unless --force is used.
   - An incomplete local model is not silently trusted; use --force to replace it.
   - Invalid model names are reported; valid requested models are still processed.
@@ -138,6 +155,15 @@ EOF
 show_changelog() {
     cat <<'EOF'
 getModels.sh CHANGELOG
+
+V2.0.0 - 2026-10-10 04:20 CEST - Bruno DELNOZ
+  - MAJOR RELEASE: synchronized script version, unchanged model-management behavior.
+
+V1.1.1-dev - 2026-10-09 21:05 CEST - Bruno DELNOZ
+  ADDED/CHANGED:
+  - --size list modifier.
+  - --exec --list --size forwards live remote-size lookup to getModels.py.
+  - Read-only size lookup; no model payload download.
 
 V1.1.0-dev - 2026-10-09 18:32 CEST - Bruno DELNOZ
   ADDED/CHANGED:
@@ -194,7 +220,7 @@ shell_prerequisites() {
 is_known_option() {
     case "$1" in
         --help|-h|--exec|-exe|--simulate|-s|--prerequis|-pr|--changelog|-ch|\
-        --list|--download|--model|--models-dir|--force)
+        --list|--download|--model|--models-dir|--force|--size)
             return 0 ;;
         *) return 1 ;;
     esac
@@ -214,6 +240,7 @@ CHANGELOG_MODE=0
 ACTION_LIST=0
 ACTION_DOWNLOAD=0
 FORCE=0
+SIZE=0
 MODEL_COUNT=0
 MODELS_DIR=""
 
@@ -227,6 +254,7 @@ while (( $# > 0 )); do
         --list) ACTION_LIST=1; shift ;;
         --download) ACTION_DOWNLOAD=1; shift ;;
         --force) FORCE=1; shift ;;
+        --size) SIZE=1; shift ;;
         --models-dir)
             (( $# >= 2 )) || die "--models-dir requires PATH."
             MODELS_DIR="$2"
@@ -251,21 +279,21 @@ while (( $# > 0 )); do
 done
 
 if (( HELP_MODE == 1 )); then
-    (( EXEC_MODE == 0 && SIMULATE_MODE == 0 && PREREQUIS_MODE == 0 && CHANGELOG_MODE == 0 && ACTION_LIST == 0 && ACTION_DOWNLOAD == 0 && FORCE == 0 && MODEL_COUNT == 0 )) \
+    (( EXEC_MODE == 0 && SIMULATE_MODE == 0 && PREREQUIS_MODE == 0 && CHANGELOG_MODE == 0 && ACTION_LIST == 0 && ACTION_DOWNLOAD == 0 && FORCE == 0 && SIZE == 0 && MODEL_COUNT == 0 )) \
         || die "--help must be used alone."
     show_help
     exit 0
 fi
 
 if (( CHANGELOG_MODE == 1 )); then
-    (( EXEC_MODE == 0 && SIMULATE_MODE == 0 && PREREQUIS_MODE == 0 && ACTION_LIST == 0 && ACTION_DOWNLOAD == 0 && FORCE == 0 && MODEL_COUNT == 0 )) \
+    (( EXEC_MODE == 0 && SIMULATE_MODE == 0 && PREREQUIS_MODE == 0 && ACTION_LIST == 0 && ACTION_DOWNLOAD == 0 && FORCE == 0 && SIZE == 0 && MODEL_COUNT == 0 )) \
         || die "--changelog must be used alone."
     show_changelog
     exit 0
 fi
 
 if (( PREREQUIS_MODE == 1 )); then
-    (( EXEC_MODE == 0 && SIMULATE_MODE == 0 && ACTION_LIST == 0 && ACTION_DOWNLOAD == 0 && FORCE == 0 && MODEL_COUNT == 0 )) \
+    (( EXEC_MODE == 0 && SIMULATE_MODE == 0 && ACTION_LIST == 0 && ACTION_DOWNLOAD == 0 && FORCE == 0 && SIZE == 0 && MODEL_COUNT == 0 )) \
         || die "--prerequis must be used alone."
     shell_prerequisites
     exit $?
@@ -279,6 +307,10 @@ if (( ACTION_DOWNLOAD == 1 )); then
 else
     (( MODEL_COUNT == 0 )) || die "--model is only valid with --download."
     (( FORCE == 0 )) || die "--force is only valid with --download."
+fi
+
+if (( ACTION_DOWNLOAD == 1 && SIZE == 1 )); then
+    die "--size is a list modifier. Use --exec --list --size."
 fi
 
 [[ -x "$PYTHON" ]] || die "Missing ${PYTHON}. Run ./install_pip.sh --install first."

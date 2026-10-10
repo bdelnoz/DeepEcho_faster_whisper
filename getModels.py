@@ -6,11 +6,22 @@
 # Full Path       : ./getModels.py
 # Author          : Bruno DELNOZ
 # Email           : bruno.delnoz@protonmail.com
-# Version         : V1.1.0-dev
-# Date / Time     : 2026-10-09 18:32 CEST
+# Version         : V2.0.0
+# Date / Time     : 2026-10-10 04:20 CEST
 # Target usage    : Faster-Whisper model-management backend
 #
 # CHANGELOG
+# V2.0.0 - 2026-10-10 04:20 CEST - Bruno DELNOZ
+#   - MAJOR RELEASE: version metadata synchronized at V2.0.0.
+#   - Preserved V1.1.4-dev behavior; no new runtime features.
+# V1.1.1-dev - 2026-10-09 21:05 CEST - Bruno DELNOZ
+#   - Added --size for live remote download-size reporting with --list.
+#   - --exec --list --size queries Hugging Face file metadata before download.
+#   - Reported size matches the Faster-Whisper download payload patterns rather
+#     than blindly using the whole repository size.
+#   - Added local on-disk size beside live remote size for diagnosis.
+#   - Size lookup is read-only and does not download model payloads.
+#   - Preserved multi-model, skip, incomplete/corrupt and --force behavior.
 # V1.1.0-dev - 2026-10-09 18:32 CEST - Bruno DELNOZ
 #   - Validation candidate; not a release tag.
 #   - Added complete 19-model reference to help.
@@ -29,6 +40,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import importlib.metadata
 import shutil
 import subprocess
@@ -36,8 +48,8 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
-VERSION = "V1.1.0-dev"
-DATE_TIME = "2026-10-09 18:32 CEST"
+VERSION = "V2.0.0"
+DATE_TIME = "2026-10-10 04:20 CEST"
 AUTHOR = "Bruno DELNOZ"
 EMAIL = "bruno.delnoz@protonmail.com"
 
@@ -63,10 +75,49 @@ MODEL_REFERENCE = (
     "turbo",
 )
 
+# Official Faster-Whisper aliases and their Hugging Face repositories.
+# Runtime mapping from faster_whisper.utils._MODELS is preferred when available;
+# this table is the stable fallback for the 19 names documented by this project.
+MODEL_REPOSITORIES = {
+    "tiny.en": "Systran/faster-whisper-tiny.en",
+    "tiny": "Systran/faster-whisper-tiny",
+    "base.en": "Systran/faster-whisper-base.en",
+    "base": "Systran/faster-whisper-base",
+    "small.en": "Systran/faster-whisper-small.en",
+    "small": "Systran/faster-whisper-small",
+    "medium.en": "Systran/faster-whisper-medium.en",
+    "medium": "Systran/faster-whisper-medium",
+    "large-v1": "Systran/faster-whisper-large-v1",
+    "large-v2": "Systran/faster-whisper-large-v2",
+    "large-v3": "Systran/faster-whisper-large-v3",
+    "large": "Systran/faster-whisper-large-v3",
+    "distil-large-v2": "Systran/faster-distil-whisper-large-v2",
+    "distil-medium.en": "Systran/faster-distil-whisper-medium.en",
+    "distil-small.en": "Systran/faster-distil-whisper-small.en",
+    "distil-large-v3": "Systran/faster-distil-whisper-large-v3",
+    "distil-large-v3.5": "distil-whisper/distil-large-v3.5-ct2",
+    "large-v3-turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+}
+
+# Exact patterns requested by Faster-Whisper download_model().
+MODEL_DOWNLOAD_PATTERNS = (
+    "config.json",
+    "preprocessor_config.json",
+    "model.bin",
+    "tokenizer.json",
+    "vocabulary.*",
+)
+
 CHANGELOG = f"""getModels.py CHANGELOG
 
 {VERSION} - {DATE_TIME} - {AUTHOR}
   ADDED/CHANGED:
+  - --size list modifier for live remote model download sizes.
+  - --exec --list --size uses Hugging Face files_metadata without downloading models.
+  - Remote size sums the same file patterns Faster-Whisper download_model() requests.
+  - Local directory size is shown alongside remote size for installed/incomplete models.
+  - Size query failures are reported explicitly instead of inventing values.
   - Validation candidate; not a release tag.
   - Complete 19-model reference in --help.
   - --model accepts one or more model names for --download.
@@ -140,6 +191,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="With --download, remove and redownload every requested local model.",
     )
+    options.add_argument(
+        "--size",
+        action="store_true",
+        help=(
+            "With --list, query live Hugging Face metadata and show the expected "
+            "Faster-Whisper download size for every model."
+        ),
+    )
 
     model_lines = "\n".join(
         f"  {idx:2d}. {name}" for idx, name in enumerate(MODEL_REFERENCE, start=1)
@@ -150,6 +209,7 @@ def build_parser() -> argparse.ArgumentParser:
 EXAMPLES
   ./getModels.py --prerequis
   ./getModels.py --exec --list
+  ./getModels.py --exec --list --size
   ./getModels.py --simulate --download --model tiny
   ./getModels.py --exec --download --model tiny
   ./getModels.py --exec --download --model base small medium
@@ -240,6 +300,87 @@ def git_ignore_state(models_dir: Path) -> str:
     return "IGNORED" if result.returncode == 0 else "NOT_IGNORED"
 
 
+def human_size(size_bytes: int | None) -> str:
+    if size_bytes is None:
+        return "UNAVAILABLE"
+    value = float(size_bytes)
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    unit = units[0]
+    for unit in units:
+        if value < 1024.0 or unit == units[-1]:
+            break
+        value /= 1024.0
+    if unit in ("B", "KiB"):
+        return f"{value:.0f} {unit}"
+    return f"{value:.2f} {unit}"
+
+
+def directory_size_bytes(path: Path) -> int:
+    total = 0
+    if not path.exists():
+        return 0
+    for item in path.rglob("*"):
+        try:
+            if item.is_file():
+                total += item.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def model_repository_map() -> dict[str, str]:
+    mapping = dict(MODEL_REPOSITORIES)
+    try:
+        from faster_whisper.utils import _MODELS
+        mapping.update({str(name): str(repo) for name, repo in dict(_MODELS).items()})
+    except Exception:
+        pass
+    return mapping
+
+
+def remote_model_size_bytes(model_name: str, cache: dict[str, int]) -> int:
+    repo_id = model_repository_map().get(model_name)
+    if not repo_id:
+        raise RuntimeError(f"no Hugging Face repository mapping for {model_name}")
+    if repo_id in cache:
+        return cache[repo_id]
+
+    try:
+        from huggingface_hub import HfApi
+    except Exception as exc:
+        raise RuntimeError(f"huggingface_hub import failed: {exc}") from exc
+
+    try:
+        info = HfApi().model_info(repo_id=repo_id, files_metadata=True)
+    except TypeError:
+        # Compatibility fallback for versions that do not accept keyword repo_id.
+        info = HfApi().model_info(repo_id, files_metadata=True)
+
+    total = 0
+    matched = 0
+    missing_metadata: list[str] = []
+    for sibling in getattr(info, "siblings", ()) or ():
+        filename = str(getattr(sibling, "rfilename", ""))
+        if not any(fnmatch.fnmatch(filename, pattern) for pattern in MODEL_DOWNLOAD_PATTERNS):
+            continue
+        size = getattr(sibling, "size", None)
+        if size is None:
+            missing_metadata.append(filename)
+            continue
+        total += int(size)
+        matched += 1
+
+    if matched == 0:
+        raise RuntimeError(f"no downloadable Faster-Whisper payload metadata returned for {repo_id}")
+    if missing_metadata:
+        raise RuntimeError(
+            f"incomplete size metadata for {repo_id}: {', '.join(missing_metadata)}"
+        )
+
+    cache[repo_id] = total
+    return total
+
+
 def run_prerequisites(models_dir: Path) -> int:
     ok = True
     print("PREREQUISITES")
@@ -284,33 +425,66 @@ def validate_business_action(args: argparse.Namespace, parser: argparse.Argument
         parser.error("--model is only valid with --download.")
     if args.list and args.force:
         parser.error("--force is only valid with --download.")
+    if args.download and args.size:
+        parser.error("--size is a list modifier. Use --exec --list --size.")
 
 
-def list_models(models_dir: Path) -> int:
+def list_models(models_dir: Path, show_size: bool) -> int:
     available_models, _ = load_faster_whisper_api()
     models = list(available_models())
+
     print("AVAILABLE FASTER-WHISPER MODELS")
-    print("-" * 76)
+    if not show_size:
+        print("-" * 76)
+        for index, model_name in enumerate(models, start=1):
+            target = model_target(models_dir, model_name)
+            print(f"{index:2d}. {model_name:<28} {model_status(target)}")
+        print("-" * 76)
+        print(f"Total            : {len(models)}")
+        print(f"Models directory : {models_dir}")
+        return 0
+
+    print("Size source       : live Hugging Face metadata")
+    print("Size scope        : files actually requested by Faster-Whisper download_model()")
+    print("No model payload is downloaded by --list --size.")
+    print("-" * 100)
+    print(f"{'#':>2}  {'MODEL':<28} {'STATUS':<14} {'DOWNLOAD SIZE':>15} {'LOCAL SIZE':>15}")
+    print("-" * 100)
+
+    cache: dict[str, int] = {}
+    size_errors: list[tuple[str, str]] = []
     for index, model_name in enumerate(models, start=1):
         target = model_target(models_dir, model_name)
-        print(f"{index:2d}. {model_name:<28} {model_status(target)}")
-    print("-" * 76)
+        try:
+            remote_bytes = remote_model_size_bytes(model_name, cache)
+            remote_text = human_size(remote_bytes)
+        except Exception as exc:
+            remote_text = "UNAVAILABLE"
+            size_errors.append((model_name, str(exc)))
+
+        local_bytes = directory_size_bytes(target) if target.exists() else 0
+        local_text = human_size(local_bytes) if target.exists() else "-"
+        print(
+            f"{index:2d}. {model_name:<28} {model_status(target):<14} "
+            f"{remote_text:>15} {local_text:>15}"
+        )
+
+    print("-" * 100)
     print(f"Total            : {len(models)}")
     print(f"Models directory : {models_dir}")
+    if size_errors:
+        print(f"Size errors       : {len(size_errors)}", file=sys.stderr)
+        for model_name, detail in size_errors:
+            print(f"  - {model_name}: {detail}", file=sys.stderr)
+        print("RESULT           : PARTIAL - one or more remote sizes unavailable", file=sys.stderr)
+        return 1
+
+    print("RESULT           : OK")
     return 0
 
 
 def directory_size_mib(path: Path) -> float:
-    total = 0
-    if not path.exists():
-        return 0.0
-    for item in path.rglob("*"):
-        try:
-            if item.is_file():
-                total += item.stat().st_size
-        except OSError:
-            continue
-    return total / (1024 ** 2)
+    return directory_size_bytes(path) / (1024 ** 2)
 
 
 def download_one_model(
@@ -433,13 +607,13 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.prerequis:
-        if any((args.exec, args.simulate, args.list, args.download, args.model, args.force)):
+        if any((args.exec, args.simulate, args.list, args.download, args.model, args.force, args.size)):
             parser.error("--prerequis is a standalone control action.")
         return run_prerequisites(models_dir)
 
     validate_business_action(args, parser)
     if args.list:
-        return list_models(models_dir)
+        return list_models(models_dir, show_size=args.size)
     return download_models_action(
         model_names=args.model,
         models_dir=models_dir,

@@ -3,10 +3,10 @@ DOCUMENT INFORMATION
 Document Name: SPECIFICATIONS.md
 Author: Bruno DELNOZ
 Email: bruno.delnoz@protonmail.com
-Version: v1.1.0-dev
-Date / Time: 2026-10-09 18:32 CEST
+Version: v2.0.0
+Date / Time: 2026-10-10 04:20 CEST
 Project: DeepEcho_faster_whisper
-Status: Validation candidate; not a release tag.
+Status: Major stable release v2.0.0; source package ready for Git push.
 Short description: Exhaustive current functional, runtime, CLI, data-layout, logging, model-management and packaging specifications.
 -->
 
@@ -14,15 +14,15 @@ Short description: Exhaustive current functional, runtime, CLI, data-layout, log
 
 ## 1. Document status
 
-This document is the detailed functional and technical contract for the current `DeepEcho_faster_whisper` validation candidate.
+This document is the detailed functional and technical contract for the `DeepEcho_faster_whisper` V2.0.0 major stable release.
 
-The current candidate is identified as:
+The current major release is identified as:
 
 ```text
-v1.1.0-dev
+v2.0.0
 ```
 
-This is a major project update but **not yet a final release declaration**. The user must validate the delivered behavior before any release/tag decision.
+This is the **V2.0.0 major stable release** promoted from the V1.1.4-dev source baseline. Its runtime behavior is unchanged. Git push and GitHub tag publication remain user-controlled.
 
 The specification intentionally records implemented behavior and agreed constraints in detail so that future changes can be checked for regressions.
 
@@ -109,30 +109,30 @@ A media directory MAY contain source media and generated runtime data such as:
 
 ```text
 source.mp4
-source.mp4.transcription_timestamps-YYYYMMDD-HHMM-SS.md
+source.mp4.transcription_timestamps-MODEL-YYYYMMDD-HHMM-SS.md
 .transcription/
 .logs/
 ```
 
 These files/directories are private working data rather than public project source.
 
-## 7. Versioning policy for this candidate
+## 7. Versioning policy for this release
 
-All modified scripts and project documents SHALL be incremented for this validation candidate.
+All project scripts and documents SHALL have V2.0.0 current release metadata, while prior-version changelog entries remain preserved.
 
 The version string used by this package is:
 
 ```text
-V1.1.0-dev
+V2.0.0
 ```
 
 or lower-case Markdown equivalent:
 
 ```text
-v1.1.0-dev
+v2.0.0
 ```
 
-The `-dev` suffix explicitly indicates that this package requires user validation and is not yet a release/tag commitment.
+The `-dev` suffix is absent: this is the user-requested major release. A source ZIP does not implicitly create a GitHub tag.
 
 ## 8. Metadata policy
 
@@ -484,6 +484,34 @@ This list SHALL use the installed Faster-Whisper runtime registry as the authori
 
 No separate `--local` action is required.
 
+### 30.1 Remote download-size listing
+
+The model manager SHALL support:
+
+```bash
+./getModels.sh --exec --list --size
+```
+
+`--size` SHALL be a modifier of the list action and SHALL NOT download model payloads.
+
+The remote size SHALL be obtained from live Hugging Face repository file metadata and SHALL represent the files that Faster-Whisper actually requests for a model download:
+
+```text
+config.json
+preprocessor_config.json
+model.bin
+tokenizer.json
+vocabulary.*
+```
+
+The implementation SHALL NOT invent static sizes when live metadata is unavailable. An unavailable size SHALL be reported explicitly.
+
+The size-enabled list SHALL also report the current local on-disk model-directory size when such a directory exists. This is useful for distinguishing a complete multi-gigabyte model from an interrupted or incomplete local target.
+
+Aliases that resolve to the same Hugging Face repository MAY reuse one metadata result during the same invocation.
+
+The normal `--exec --list` action SHALL remain fast and SHALL NOT require a Hugging Face metadata query unless `--size` is requested.
+
 ## 31. Static model reference in help
 
 The help output for `getModels.sh` and `getModels.py` SHALL include a complete static model reference **immediately before the EXAMPLES section**.
@@ -694,7 +722,7 @@ The device SHALL remain configurable through:
 
 ## 47. Default compute type
 
-Current candidate default SHALL be:
+Current release default SHALL be:
 
 ```text
 int8
@@ -706,7 +734,7 @@ The compute type SHALL remain configurable through:
 --compute-type
 ```
 
-This candidate default MAY be revisited after real performance/quality validation; it SHALL not be silently changed without versioning/documentation.
+This release default MAY be revisited after real performance/quality validation; it SHALL not be silently changed without versioning/documentation.
 
 ## 48. Explicit model requirement
 
@@ -760,7 +788,7 @@ The transcription layer SHALL support:
 The following command SHALL work when several MP4 files exist:
 
 ```bash
-./transcribe.sh --simulate --model tiny --source *.mp4
+./transcribe.sh --simulate --source *.mp4 --model tiny
 ```
 
 If Bash expands `*.mp4` into several filenames, every expanded filename SHALL remain part of the source group rather than becoming an unknown argument.
@@ -951,7 +979,8 @@ That exact timestamp SHALL be reused by:
 - timestamped Markdown outputs;
 - plain Markdown outputs;
 - plain TXT outputs;
-- transcription logs across all involved source directories.
+- transcription logs across all involved source directories;
+- per-source Processing-Time benchmark reports.
 
 This creates a direct visible association between artifacts from the same run.
 
@@ -980,7 +1009,7 @@ For source:
 timestamped Markdown SHALL remain in the same directory as the source:
 
 ```text
-/path/source.mp4.transcription_timestamps-YYYYMMDD-HHMM-SS.md
+/path/source.mp4.transcription_timestamps-MODEL-YYYYMMDD-HHMM-SS.md
 ```
 
 It SHALL NOT be moved into `.transcription/` by default.
@@ -998,8 +1027,8 @@ inside the source directory by default.
 Example:
 
 ```text
-/path/.transcription/source.mp4.transcription-YYYYMMDD-HHMM-SS.md
-/path/.transcription/source.mp4.transcript-YYYYMMDD-HHMM-SS.txt
+/path/.transcription/source.mp4.transcription-MODEL-YYYYMMDD-HHMM-SS.md
+/path/.transcription/source.mp4.transcript-MODEL-YYYYMMDD-HHMM-SS.txt
 ```
 
 ## 74. Default transcription log location
@@ -1075,7 +1104,7 @@ Simulation SHALL NOT create them.
 
 ## 81. Transcription output formats
 
-The current candidate SHALL generate:
+The current release SHALL generate:
 
 - timestamped Markdown when timestamps are enabled;
 - plain Markdown;
@@ -1083,23 +1112,23 @@ The current candidate SHALL generate:
 
 ## 82. SRT status
 
-SRT generation is not implemented in this candidate.
+SRT generation is not implemented in this release.
 
 It remains a possible future extension.
 
 ## 83. WebVTT status
 
-WebVTT generation is not implemented in this candidate.
+WebVTT generation is not implemented in this release.
 
 WebVTT refers to the `.vtt` subtitle/text-track format.
 
 ## 84. JSON status
 
-JSON transcription output is not required and is not generated in this candidate.
+JSON transcription output is not required and is not generated in this release.
 
 ## 85. Speaker diarization status
 
-Speaker diarization is not implemented in this candidate.
+Speaker diarization is not implemented in this release.
 
 Faster-Whisper transcription alone SHALL NOT be presented as speaker diarization.
 
@@ -1160,6 +1189,8 @@ Final batch result SHALL indicate error when at least one source failed.
 ## 90. Transcription logging content
 
 Runtime logs SHOULD include at least:
+
+- the exact executed command/argv as the first log record;
 
 - project/script version;
 - run timestamp;
@@ -1224,7 +1255,7 @@ The installer SHALL ensure the protective rule is present to reduce the chance o
 
 ## 95. ZIP/package policy
 
-The delivered validation ZIP SHALL contain the complete updated repository source set, not only the scripts that changed most recently.
+The delivered release ZIP SHALL contain the complete updated repository source set, not only the scripts that changed most recently.
 
 The ZIP SHALL contain every updated repository file listed in section 4.
 
@@ -1261,6 +1292,8 @@ Every user-facing script SHALL be tested with no arguments to verify help-only b
 ## 101. Help validation
 
 Help output SHALL be tested for all user-facing scripts.
+
+`transcribe.sh` and `transcribe.py` help SHALL place the model argument group last and SHALL show `--model <NAME>` last in transcription command examples.
 
 `getModels` help SHALL be specifically checked for:
 
@@ -1315,8 +1348,11 @@ Tests SHALL verify:
 - `.transcription/` contains plain Markdown/TXT;
 - `.logs/` contains transcription logs;
 - all output names contain `YYYYMMDD-HHMM-SS`;
+- transcript filenames contain the selected model immediately before the run timestamp;
+- each processed source creates a model-named Processing-Time Markdown report under source `.logs/`;
 - one run uses one shared timestamp;
-- multi-directory batches create per-directory `.logs/` and `.transcription/` defaults.
+- multi-directory batches create per-directory `.logs/` and `.transcription/` defaults;
+- two Processing-Time reports created for different models have identical structural headers/fields/units after values are ignored.
 
 ## 107. Installer-log validation
 
@@ -1396,7 +1432,7 @@ It SHALL reflect the currently delivered installation, model-management and tran
 
 ## 115. `CHANGELOG.md` project history
 
-`CHANGELOG.md` SHALL preserve the original installation history and add the current validation-candidate history, including at least:
+`CHANGELOG.md` SHALL preserve the original installation history, all development candidate changes, and the V2.0.0 major-release entry, including at least:
 
 - transcription introduction;
 - V1.0.1 source/glob fix;
@@ -1467,7 +1503,7 @@ produces names beginning:
 2011.mp4.transcript...
 ```
 
-This convention is part of the current candidate and SHALL be documented consistently.
+This convention is part of the current release and SHALL be documented consistently.
 
 ## 122. Source timestamp units
 
@@ -1531,7 +1567,7 @@ No credentials, access tokens, passwords or private authentication material SHAL
 
 ## 130. Project-package exclusion policy
 
-The validation ZIP SHALL exclude at least:
+The release ZIP SHALL exclude at least:
 
 ```text
 .venv/
@@ -1562,38 +1598,228 @@ The user specifically requires a full-project ZIP for this update.
 
 A partial ZIP containing only changed scripts SHALL be considered incomplete.
 
-## 133. Validation before release
+**V2.0.0 release rule:** The full project ZIP SHALL include both the complete current `SPECIFICATIONS.md` and its synchronized NoXoZ.be formatted `SPECIFICATIONS.pdf`. The prior development-only PDF deferral is lifted by the user for V2.0.0.
+
+## 133. Validation after release
 
 Successful automated checks on the delivered package do not replace user validation on the actual workstation/media/model set.
 
-The package SHALL remain marked as a validation candidate until the user confirms expected real-world behavior.
+V2.0.0 is designated a major stable release by the user. Tests on real MP4 files and downloaded models remain a separate ongoing validation activity.
 
 ## 134. Current acceptance checklist
 
-The candidate is technically ready for user validation when all of the following are true:
+The release package SHALL satisfy the following verifiable acceptance conditions:
 
 1. every shell script passes syntax validation;
 2. every Python script compiles;
 3. no-argument help works;
-4. script changelogs show the new candidate version;
+4. script changelogs and current version metadata consistently show V2.0.0;
 5. getModels help contains the 19-model list before examples;
-6. multi-model parsing works in shell and Python;
-7. model force logic works in isolated tests;
-8. quoted and unquoted transcription globs work;
-9. filenames with spaces work;
-10. PyAV 19 compatibility path is exercised in a test harness;
-11. output naming uses `YYYYMMDD-HHMM-SS`;
-12. timestamped Markdown stays beside sources;
-13. plain outputs go under `.transcription/`;
-14. transcription logs go under source `.logs/`;
-15. installer logs target repo `logs/`;
-16. `.gitignore` preservation/addition checks pass;
-17. all expected documentation is present;
-18. `WHY.md` is absent;
-19. excluded runtime/private directories are absent from the ZIP;
-20. ZIP integrity passes.
+6. `--exec --list --size` reports live remote download sizes without downloading model payloads;
+7. multi-model parsing works in shell and Python;
+8. model force logic works in isolated tests;
+9. quoted and unquoted transcription globs work;
+10. filenames with spaces work;
+11. PyAV 19 compatibility path is exercised in a test harness;
+12. transcription help/examples keep `--model` last;
+13. normal runtime logs start with the exact executed command/argv;
+14. transcript filenames contain the selected model before `YYYYMMDD-HHMM-SS`;
+15. timestamped Markdown stays beside sources;
+16. plain outputs go under `.transcription/`;
+17. transcription logs go under source `.logs/`;
+18. each processed source gets a source-local Processing-Time Markdown report;
+19. Processing-Time reports for different models use an identical structural template;
+20. installer logs target repo `logs/`;
+21. `.gitignore` preservation/addition checks pass;
+22. all expected documentation is present;
+23. the current Markdown specification and synchronized NoXoZ.be PDF are both present and PDF content/navigation tests pass;
+24. `WHY.md` is absent;
+25. excluded runtime/private directories are absent from the ZIP;
+26. ZIP integrity passes.
 
-## 135. Changelog
+## 135. Transcription help model-last convention
+
+The model selector SHALL be deliberately positioned last in the transcription help workflow.
+
+For `transcribe.sh` and `transcribe.py`:
+
+- the model argument group SHALL appear after the other business-argument groups in help output;
+- transcription examples SHALL place `--model <NAME>` at the end of the command;
+- this is a usability requirement intended to make terminal-history model swaps fast;
+- the parser SHALL continue accepting `--model` in any valid CLI position even though documentation presents it last.
+
+Example:
+
+```text
+./transcribe.sh --exec --source video.mp4 --normalize --model large-v3
+```
+
+## 136. Runtime log executed-command first record
+
+Every real transcription runtime `.log` SHALL begin with a record containing the executed command/argv before the normal start/version/source records.
+
+When launched through `transcribe.sh`, the wrapper SHALL forward its actual argv to `transcribe.py` for this log record.
+
+Because unquoted shell globs are expanded by the shell before the script receives them, the logged command MAY contain the expanded filenames rather than the literal pre-expansion glob token. This is the actual argv received by the program.
+
+## 137. Model-aware transcript filename convention
+
+Every transcript result filename SHALL identify the selected model immediately before the run timestamp.
+
+Required forms:
+
+```text
+<source>.transcription_timestamps-<model>-YYYYMMDD-HHMM-SS.md
+<source>.transcription-<model>-YYYYMMDD-HHMM-SS.md
+<source>.transcript-<model>-YYYYMMDD-HHMM-SS.txt
+```
+
+For source `video.mp4` and model `large-v3`:
+
+```text
+video.mp4.transcription_timestamps-large-v3-20261009-2208-05.md
+.transcription/video.mp4.transcription-large-v3-20261009-2208-05.md
+.transcription/video.mp4.transcript-large-v3-20261009-2208-05.txt
+```
+
+The source extension remains part of the output basename.
+
+## 138. Processing-Time benchmark report
+
+Every real per-source transcription attempt SHALL create one additional Markdown report dedicated to timing/performance comparison.
+
+This report is NOT the normal operational runtime log and SHALL remain a separate file.
+
+Its purpose is direct model comparison: the user can open two reports side by side, scroll them in parallel, and find every metric at the same structural position.
+
+## 139. Processing-Time filename and location
+
+The benchmark report SHALL be source-local under `.logs/` and SHALL use:
+
+```text
+<source-name>-Processing-Time-<model>-YYYYMMDD-HHMM-SS.md
+```
+
+Examples:
+
+```text
+.logs/video.mp4-Processing-Time-tiny-20261009-2208-05.md
+.logs/video.mp4-Processing-Time-large-v3-20261009-2212-41.md
+```
+
+The same run timestamp used by the transcript outputs SHALL be reused by the report for that run.
+
+## 140. Processing-Time invariant comparison template
+
+All Processing-Time reports SHALL use exactly the same logical template regardless of model, source duration, success/failure state or runtime option values.
+
+The following SHALL remain invariant:
+
+- document title;
+- section names;
+- section order;
+- table headers;
+- field names;
+- field order;
+- measurement units;
+- comparison-note order.
+
+Only field values MAY change.
+
+A value that cannot be determined SHALL remain in its normal position and SHALL be written as `N/A`; the row SHALL NOT be omitted.
+
+This invariant is a regression-tested requirement. A test SHALL compare reports from at least two different model names after values are ignored and verify that their structural field/header sequence is identical.
+
+## 141. Processing-Time required field order and calculations
+
+The fixed report SHALL use these sections and field order:
+
+1. **Identification**
+   1. Source file
+   2. Source path
+   3. Model
+   4. Run timestamp
+   5. Status
+2. **Transcription Configuration**
+   1. Requested language
+   2. Detected language
+   3. Device
+   4. Compute type
+   5. VAD
+   6. Normalize
+   7. Amplify factor
+   8. Amplify dB
+   9. Timestamped Markdown
+3. **Timing**
+   1. Media duration (s)
+   2. Model load time (s)
+   3. Processing start
+   4. Processing end
+   5. Preprocessing time (s)
+   6. Transcription + output processing time (s)
+   7. Total source processing time (s)
+   8. Real-time factor (processing / media)
+   9. Processing speed (media / processing)
+4. **Result**
+   1. Segments
+   2. Transcript end (s)
+   3. Error
+5. **Comparison Notes**
+
+The real-time factor SHALL be calculated as:
+
+```text
+transcription_processing_seconds / media_duration_seconds
+```
+
+Lower is faster.
+
+Processing speed SHALL be calculated as:
+
+```text
+media_duration_seconds / transcription_processing_seconds
+```
+
+Higher is faster and is displayed as `x realtime`.
+
+Timing values SHALL use stable units/precision across model reports.
+
+## 142. SPECIFICATIONS Markdown/PDF synchronization contract
+
+`SPECIFICATIONS.md` is the authoritative technical source.
+
+**V2.0.0 release decision:** The previously deferred PDF generation is now explicitly authorized and required for this major release. Every future modification of `SPECIFICATIONS.md` SHALL trigger PDF regeneration before packaging.
+
+`SPECIFICATIONS.pdf` SHALL:
+
+- contain the complete current specification without summarizing, censoring, omitting or simplifying technical content;
+- preserve heading numbering, lists, tables, code blocks and changelog content from the Markdown source;
+- use the approved NoXoZ.be PDF design/layout standard;
+- be searchable/selectable;
+- include a clickable table of contents and PDF bookmarks;
+- carry the current release version/status (`V2.0.0`);
+- be validated visually after generation;
+- be included beside `SPECIFICATIONS.md` in **every** full project ZIP.
+
+If Markdown and PDF ever disagree, the validated Markdown is authoritative and the PDF SHALL be regenerated.
+
+## 143. Changelog
+
+### v1.1.2-dev — 2026-10-09 22:08 CEST — Bruno DELNOZ
+
+- CHANGED: Transcription help/examples present the model selector last.
+- CHANGED: Transcript filenames include the selected model before the run timestamp.
+- ADDED: Executed command/argv as first runtime-log record.
+- ADDED: Separate source-local fixed-template Processing-Time benchmark Markdown.
+- ADDED: Side-by-side comparison invariant and benchmark timing calculations.
+- DEFERRED BY USER: PDF regeneration and inclusion until Markdown/script testing is complete; existing PDF remains untouched.
+- STATUS: Validation candidate; not a release tag.
+
+### v1.1.1-dev — 2026-10-09 21:05 CEST — Bruno DELNOZ
+
+- ADDED: `getModels --exec --list --size` live remote Faster-Whisper payload-size reporting.
+- ADDED: local-size comparison for existing/incomplete model directories.
+- STATUS: Validation candidate; not a release tag.
 
 ### v1.1.0-dev — 2026-10-09 18:32 CEST — Bruno DELNOZ
 
@@ -1610,3 +1836,49 @@ The candidate is technically ready for user validation when all of the following
 ### v1.0.0 — 2026-10-09 12:56 CEST — Bruno DELNOZ
 
 - ADDED: Initial installer/bootstrap specifications and high-level future transcription boundary.
+
+## 144. Recursive MP4 source selection
+
+- New `--recursive` argument (aliases `--recursif`, `--récursif`, `--récursive`) SHALL be recognized by both `transcribe.sh` and `transcribe.py`.
+- In recursive mode the scan root SHALL be the process working directory (`.`) by default, or the `--source-dir` override when supplied.
+- The scan SHALL select every regular MP4 under the root, including every level of nested subdirectories. Extension matching SHALL be case-insensitive (`.mp4`, `.MP4`, etc.).
+- Recursive mode SHALL be independent of whether `*.mp4` was expanded by Bash or passed quoted as a literal wildcard: `--source` arguments SHALL NOT restrict recursive discovery when this flag is enabled.
+- Results SHALL be deterministically ordered and deduplicated; the scanner SHALL NOT follow symlinked directories or symlinked MP4 files.
+- An unreadable subdirectory SHALL cause an explicit source-discovery error instead of being silently skipped.
+- With recursive mode OFF, the previous exact-file, quoted-glob and unquoted shell-expansion behavior SHALL remain unchanged.
+- There SHALL be no automatic recursive scan unless `--recursive`/`--recursif` is explicitly present.
+
+## 145. Recursive mode execution, outputs and privacy
+
+- Every recursively discovered file SHALL be handled by the existing single-run **sequential** transcription loop. The new feature SHALL NOT spawn additional parallel transcriptions or automatically alter model, CPU, memory, device or audio-processing options.
+- Each source SHALL retain the V1.1.2-dev location/naming contract for timestamped Markdown, `.transcription/` Markdown/TXT, `.logs/` run logs and Processing-Time benchmark files.
+- The recursive scanner SHALL NOT move, stage, copy or modify source media; no source video, transcript, log or report SHALL be placed under the project repository for recovery or temporary caching.
+- `--simulate` with `--recursive` SHALL list the complete selected source/output plan and make no filesystem changes.
+- The plan SHALL explicitly display whether recursion is on or off and the total source count.
+
+## 146. CLI help, examples and regression tests
+
+- Both the Python and shell help SHALL document `--recursive` and its alias; examples SHALL place `--recursive` **immediately before** `--model` and keep `--model` last.
+- Documentation SHALL include the literal command `--exec --source *.mp4 --recursive --model large-v3` and explain the expanded-shell-glob pitfall.
+- Tests SHALL cover: nested subdirectories, unquoted-expanded sources, quoted globs, uppercase extensions, filenames with spaces, duplicate elimination, symlinked directory exclusion, default nonrecursive mode, explicit `--source-dir`, simulation with no writes, and errors for zero matches.
+
+## 147. Changelog — v1.1.4-dev — 2026-10-10 04:00 CEST
+
+- ADDED: recursive MP4 discovery via `--recursive` / `--recursif` in both transcription interfaces.
+- ADDED: stable working-directory-based recursion even when shell expands the `*.mp4` source glob.
+- PRESERVED: nonrecursive source selection, sequential transcription, source-local outputs and invariant performance logs.
+- PRESERVED: zero repository storage of private media or transcriptions; no `.recovery/` implementation.
+- BASELINE: forked strictly from V1.1.2-dev; rejected V1.1.3-dev recovery architecture excluded.
+- DEFERRED BY USER: generation or packaging of `SPECIFICATIONS.pdf` until the approved Markdown is final.
+- STATUS: validation candidate; no V2.0 release yet.
+
+## 148. Major release — V2.0.0 — 2026-10-10
+
+- STATUS: Major stable release, promoted from the V1.1.4-dev source baseline.
+- VERSION: All six executables/scripts SHALL advertise `V2.0.0` in headers and runtime `VERSION` constants; all five Markdown documents and `requirements.txt` SHALL carry current V2.0.0 metadata. `.gitignore` remains strictly additive.
+- FUNCTIONALITY: No transcription, recursive-scan, model-management or installation logic changes in this release. The rejected V1.1.3-dev private-media recovery mechanism SHALL NOT be reintroduced.
+- DOCUMENTATION: `README.md`, `INSTALL.md`, `EXAMPLES.md`, `SPECIFICATIONS.md`, `CHANGELOG.md` reflect the current major-release version. Prior-version history is retained unchanged for audit.
+- PDF: `SPECIFICATIONS.pdf` SHALL reproduce the complete present Markdown specification in the NoXoZ.be A4 design, with cover and V2.0.0 release status, clickable current-section TOC, actual page references, bookmarks, selectable text, versioned headers/footers, and PDF metadata.
+- PACKAGE: Full ZIP SHALL contain the 13 V1.1.4-dev project files **plus** `SPECIFICATIONS.pdf`, totaling 14 deliverable files. No personal source media, transcripts, models, virtual environments, runtime logs, build files or WHY.md.
+- ACCEPTANCE: Verify six script help/version identities, Bash syntax, Python compilation, recursive and nonrecursive discovery, model-list controls, all ZIP entries, Markdown/PDF revision correspondence, and PDF text/links/bookmarks.
+- RELEASE CONTROL: The user remains solely responsible for pushing this release to their Git repository or creating a remote tag.

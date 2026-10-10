@@ -6,11 +6,21 @@
 # Full Path       : ./transcribe.sh
 # Author          : Bruno DELNOZ
 # Email           : bruno.delnoz@protonmail.com
-# Version         : V1.1.0-dev
-# Date / Time     : 2026-10-09 18:32 CEST
+# Version         : V2.0.0
+# Date / Time     : 2026-10-10 04:20 CEST
 # Target usage    : User-facing Faster-Whisper transcription interface
 #
 # CHANGELOG
+# V2.0.0 - 2026-10-10 04:20 CEST - Bruno DELNOZ
+#   - MAJOR RELEASE: version metadata synchronized at V2.0.0.
+#   - Preserved V1.1.4-dev behavior; no new runtime features.
+# V1.1.4-dev - 2026-10-10 04:00 CEST - Bruno DELNOZ
+#   - Added --recursive/--recursif MP4 scan under current/--source-dir.
+#   - Preserved original glob and filenames-with-spaces handling without --recursive.
+# V1.1.2-dev - 2026-10-09 22:08 CEST - Bruno DELNOZ
+#   - Model is shown last in help/examples for fast model swapping.
+#   - Forwards the exact shell argv command to the Python runtime log.
+#   - Documents model-aware transcript names and Processing-Time report.
 # V1.1.0-dev - 2026-10-09 18:32 CEST - Bruno DELNOZ
 #   - Validation candidate; not a release tag.
 #   - New timestamped output layout using YYYYMMDD-HHMM-SS.
@@ -27,8 +37,8 @@
 
 set -uo pipefail
 
-VERSION="V1.1.0-dev"
-DATE_TIME="2026-10-09 18:32 CEST"
+VERSION="V2.0.0"
+DATE_TIME="2026-10-10 04:00 CEST"
 AUTHOR="Bruno DELNOZ"
 EMAIL="bruno.delnoz@protonmail.com"
 
@@ -57,8 +67,8 @@ transcribe.py through the repository-local .venv.
 USAGE
   ./transcribe.sh --help
   ./transcribe.sh --prerequis
-  ./transcribe.sh --simulate --model <NAME> [OPTIONS]
-  ./transcribe.sh --exec --model <NAME> [OPTIONS]
+  ./transcribe.sh --simulate [OPTIONS] --model <NAME>
+  ./transcribe.sh --exec [OPTIONS] --model <NAME>
 
 SOLO CONTROL OPTIONS
   --help, -h
@@ -99,11 +109,7 @@ SOURCE / DESTINATION
       Default: <source-file-directory>/.transcription/.
       Timestamped Markdown and runtime logs always remain source-local.
 
-MODEL / RUNTIME
-  --model <NAME>
-      Required for --exec/--simulate.
-      Model must already exist under ${DEFAULT_MODELS_DIR}/<NAME>/.
-
+RUNTIME
   --models-dir <PATH>
       Override local model storage. Default: ${DEFAULT_MODELS_DIR}
 
@@ -147,30 +153,50 @@ OUTPUT
       Allow replacement only if the exact timestamped target already exists.
       Normal runs avoid overwrites by allocating a unique run timestamp.
 
+RECURSIVE DISCOVERY
+  --recursive, --recursif, --récursif, --récursive
+      Scan every MP4 in the working directory and all subdirectories.
+      With --source-dir, scan that directory instead.
+      In recursive mode, --source values do not restrict the MP4 scan.
+      Works with unquoted --source *.mp4 expanded by Bash.
+      Processes discovered files sequentially, one per run.
+      No symbolic-link directories are traversed.
+      Default: OFF; without it the normal source selection is unchanged.
+
+MODEL (LAST)
+  --model <NAME>
+      Required for --exec/--simulate.
+      Model must already exist under ${DEFAULT_MODELS_DIR}/<NAME>/.
+      Kept last in help/examples so the model can be swapped quickly.
+
 DEFAULT OUTPUT LAYOUT
   source-dir/
   ├── source.mp4
-  ├── source.mp4.transcription_timestamps-YYYYMMDD-HHMM-SS.md
+  ├── source.mp4.transcription_timestamps-MODEL-YYYYMMDD-HHMM-SS.md
   ├── .transcription/
-  │   ├── source.mp4.transcription-YYYYMMDD-HHMM-SS.md
-  │   └── source.mp4.transcript-YYYYMMDD-HHMM-SS.txt
+  │   ├── source.mp4.transcription-MODEL-YYYYMMDD-HHMM-SS.md
+  │   └── source.mp4.transcript-MODEL-YYYYMMDD-HHMM-SS.txt
   └── .logs/
-      └── transcribe-${VERSION}-YYYYMMDD-HHMM-SS.log
+      ├── transcribe-${VERSION}-YYYYMMDD-HHMM-SS.log
+      └── source.mp4-Processing-Time-MODEL-YYYYMMDD-HHMM-SS.md
 
 EXAMPLES
   ./transcribe.sh --prerequis
-  ./transcribe.sh --simulate --model tiny --source video.mp4
-  ./transcribe.sh --exec --model tiny --source video.mp4
-  ./transcribe.sh --exec --model tiny --source '*.mp4'
-  ./transcribe.sh --exec --model tiny --source *.mp4
-  ./transcribe.sh --exec --model tiny --source 'video with spaces.mp4'
-  ./transcribe.sh --exec --model tiny --source first.mp4 'second file.mp4'
-  ./transcribe.sh --exec --model tiny --source-dir /media/videos
-  ./transcribe.sh --exec --model tiny --source video.mp4 --dest-dir /media/results
-  ./transcribe.sh --exec --model tiny --source video.mp4 --amplify 2
-  ./transcribe.sh --exec --model tiny --source video.mp4 --amplify-db 6
-  ./transcribe.sh --exec --model tiny --source video.mp4 --normalize
-  ./transcribe.sh --exec --model tiny --source video.mp4 --vad
+  ./transcribe.sh --simulate --source video.mp4 --model tiny
+  ./transcribe.sh --exec --source video.mp4 --model tiny
+  ./transcribe.sh --exec --source '*.mp4' --model tiny
+  ./transcribe.sh --exec --source *.mp4 --model tiny
+  ./transcribe.sh --exec --source 'video with spaces.mp4' --model tiny
+  ./transcribe.sh --exec --source first.mp4 'second file.mp4' --model tiny
+  ./transcribe.sh --exec --source *.mp4 --recursive --model large-v3
+  ./transcribe.sh --simulate --source '*.mp4' --recursive --model tiny
+  ./transcribe.sh --exec --source-dir /media/videos --recursive --model medium
+  ./transcribe.sh --exec --source-dir /media/videos --model tiny
+  ./transcribe.sh --exec --source video.mp4 --dest-dir /media/results --model tiny
+  ./transcribe.sh --exec --source video.mp4 --amplify 2 --model tiny
+  ./transcribe.sh --exec --source video.mp4 --amplify-db 6 --model tiny
+  ./transcribe.sh --exec --source video.mp4 --normalize --model tiny
+  ./transcribe.sh --exec --source video.mp4 --vad --model tiny
 
 IMPORTANT
   - French is already the default; --language fr is unnecessary.
@@ -179,6 +205,7 @@ IMPORTANT
   - Videos are never copied into the repository.
   - Every generated transcript/log filename is timestamped to the second.
   - The same run timestamp is shared by all outputs from one invocation.
+  - Processing-Time Markdown reports use one invariant template across all models.
   - Speaker diarization is NOT implemented; no fake speaker labels.
   - SRT, WebVTT and JSON are not generated in this validation build.
 EOF
@@ -187,6 +214,22 @@ EOF
 show_changelog() {
     cat <<'EOF'
 transcribe.sh CHANGELOG
+
+V2.0.0 - 2026-10-10 04:20 CEST - Bruno DELNOZ
+  - MAJOR RELEASE: synchronized script version, unchanged transcription behavior.
+
+V1.1.4-dev - 2026-10-10 04:00 CEST - Bruno DELNOZ
+  ADDED:
+  - --recursive/--recursif discovers every nested MP4 under current/--source-dir.
+  - Works with unquoted --source *.mp4 expanded by the shell.
+  - No change to nonrecursive behavior, output layout or privacy policy.
+
+V1.1.2-dev - 2026-10-09 22:08 CEST - Bruno DELNOZ
+  ADDED/CHANGED:
+  - Model kept last in help/examples.
+  - Exact shell command forwarded to the backend for the first runtime-log record.
+  - Model-aware transcript filename convention.
+  - Source-local invariant Processing-Time Markdown report.
 
 V1.1.0-dev - 2026-10-09 18:32 CEST - Bruno DELNOZ
   ADDED/CHANGED:
@@ -255,7 +298,7 @@ check_shell_prerequisites() {
 is_known_option() {
     case "$1" in
         --help|-h|--exec|-exe|--simulate|-s|--prerequis|-pr|--changelog|-ch|\
-        --source|--source-dir|--dest-dir|--model|--models-dir|--language|\
+        --source|--source-dir|--dest-dir|--recursive|--recursif|--récursif|--récursive|--model|--models-dir|--language|\
         --device|--compute-type|--vad|--no-vad|--normalize|--amplify|\
         --amplify-db|--timestamp|--no-timestamp|--force)
             return 0 ;;
@@ -288,6 +331,7 @@ AMPLIFY=""
 AMPLIFY_DB=""
 TIMESTAMP_MODE=""
 FORCE=0
+RECURSIVE=0
 
 while (( $# > 0 )); do
     case "$1" in
@@ -351,6 +395,7 @@ while (( $# > 0 )); do
             [[ -z "$TIMESTAMP_MODE" ]] || die "Use only one of --timestamp or --no-timestamp."
             TIMESTAMP_MODE="off"; shift ;;
         --force) FORCE=1; shift ;;
+        --recursive|--recursif|--récursif|--récursive) RECURSIVE=1; shift ;;
         *) die "Unknown argument: $1" ;;
     esac
 done
@@ -382,4 +427,7 @@ fi
 "$PYTHON" -c 'import faster_whisper, ctranslate2, av' >/dev/null 2>&1 \
     || die "Faster-Whisper runtime is incomplete. Run ./install.sh --install."
 
+printf -v DEEPECHO_ORIGINAL_COMMAND '%q ' "$0" "${ORIGINAL_ARGS[@]}"
+DEEPECHO_ORIGINAL_COMMAND="${DEEPECHO_ORIGINAL_COMMAND% }"
+export DEEPECHO_ORIGINAL_COMMAND
 exec "$PYTHON" "$PY_SCRIPT" "${ORIGINAL_ARGS[@]}"

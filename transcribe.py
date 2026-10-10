@@ -6,11 +6,24 @@
 # Full Path       : ./transcribe.py
 # Author          : Bruno DELNOZ
 # Email           : bruno.delnoz@protonmail.com
-# Version         : V1.1.0-dev
-# Date / Time     : 2026-10-09 18:32 CEST
+# Version         : V2.0.0
+# Date / Time     : 2026-10-10 04:20 CEST
 # Target usage    : Faster-Whisper transcription backend
 #
 # CHANGELOG
+# V2.0.0 - 2026-10-10 04:20 CEST - Bruno DELNOZ
+#   - MAJOR RELEASE: version metadata synchronized at V2.0.0.
+#   - Preserved V1.1.4-dev behavior; no new runtime features.
+# V1.1.4-dev - 2026-10-10 04:00 CEST - Bruno DELNOZ
+#   - Added --recursive discovery of MP4 files under current/--source-dir.
+#   - Unquoted --source *.mp4 now includes nested MP4 files in recursive mode.
+#   - Non-recursive file/glob selection is unchanged; no media staging.
+# V1.1.2-dev - 2026-10-09 22:08 CEST - Bruno DELNOZ
+#   - Model is shown last in transcription help/examples for fast model swapping.
+#   - Normal runtime logs now start with the exact executed command/argv.
+#   - Transcript output filenames now include the selected model before the run timestamp.
+#   - Added a per-source Processing-Time Markdown benchmark report under .logs/.
+#   - Processing-Time reports use one invariant comparison template across all models.
 # V1.1.0-dev - 2026-10-09 18:32 CEST - Bruno DELNOZ
 #   - Validation candidate; not a release tag.
 #   - Added a single run timestamp in YYYYMMDD-HHMM-SS format.
@@ -38,6 +51,7 @@ import glob
 import importlib.metadata
 import logging
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -48,8 +62,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable, Sequence
 
-VERSION = "V1.1.0-dev"
-DATE_TIME = "2026-10-09 18:32 CEST"
+VERSION = "V2.0.0"
+DATE_TIME = "2026-10-10 04:20 CEST"
 AUTHOR = "Bruno DELNOZ"
 EMAIL = "bruno.delnoz@protonmail.com"
 
@@ -65,7 +79,26 @@ SUPPORTED_MEDIA_EXTENSIONS = {
 
 CHANGELOG = f"""transcribe.py CHANGELOG
 
+V2.0.0 - 2026-10-10 04:20 CEST - {AUTHOR}
+  - MAJOR RELEASE: V2.0.0 synchronized; recursive and other behavior preserved.
+
+V1.1.4-dev - 2026-10-10 04:00 CEST - {AUTHOR}
+  ADDED:
+  - --recursive recursively discovers MP4 sources under --source-dir (default: current working directory).
+  - --source *.mp4 works whether the shell expands the glob or not.
+  - One combined sequential run; source-local outputs/logs remain unchanged.
+  - Non-recursive source resolution and all processing/output behavior remain unchanged.
+
 {VERSION} - {DATE_TIME} - {AUTHOR}
+  ADDED/CHANGED:
+  - Model is displayed last in help/examples.
+  - Runtime log first record is the exact executed command/argv.
+  - Transcript filenames include the selected model before the run timestamp.
+  - Added one source-local .logs/<source>-Processing-Time-<model>-<stamp>.md report per source.
+  - Processing-Time reports use an invariant field/header order across models.
+  - Timing report records model load, preprocessing, transcription/output, total source processing, media duration, real-time factor and processing speed.
+
+V1.1.0-dev - 2026-10-09 18:32 CEST - {AUTHOR}
   ADDED/CHANGED:
   - Validation candidate; not a release tag.
   - One run timestamp: YYYYMMDD-HHMM-SS.
@@ -97,6 +130,7 @@ class OutputPaths:
     timestamp_md: Path
     plain_md: Path
     plain_txt: Path
+    processing_report_md: Path
 
 
 def script_dir() -> Path:
@@ -160,9 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    runtime = parser.add_argument_group("MODEL / RUNTIME")
-    runtime.add_argument("--model", metavar="NAME",
-                         help="Downloaded local model name; required for exec/simulate.")
+    runtime = parser.add_argument_group("RUNTIME")
     runtime.add_argument("--models-dir", default=str(default_models_dir()), metavar="PATH",
                          help="Models directory. Default: <repo>/models")
     runtime.add_argument("--language", default=DEFAULT_LANGUAGE, metavar="LANG",
@@ -197,28 +229,48 @@ def build_parser() -> argparse.ArgumentParser:
     outputs.add_argument("--force", action="store_true",
                          help="Allow replacement only if an exact timestamped target already exists.")
 
+    recursive_group = parser.add_argument_group("RECURSIVE DISCOVERY")
+    recursive_group.add_argument(
+        "--recursive", "--recursif", "--récursif", "--récursive",
+        action="store_true",
+        help=(
+            "Find all .mp4 files under --source-dir (default: current directory),\n"
+            "including subdirectories, in one sequential transcription run.\n"
+            "When enabled, --source values are not used to restrict which MP4s are found.\n"
+            "Without this flag the original file/glob selection is unchanged."
+        ),
+    )
+
+    model_group = parser.add_argument_group("MODEL (LAST)")
+    model_group.add_argument("--model", metavar="NAME",
+                             help="Downloaded local model name; required for exec/simulate. Kept last in help/examples for fast model swapping.")
+
     parser.epilog = """OUTPUT LAYOUT (DEFAULT)
   source-dir/
   ├── source.mp4
-  ├── source.mp4.transcription_timestamps-YYYYMMDD-HHMM-SS.md
+  ├── source.mp4.transcription_timestamps-MODEL-YYYYMMDD-HHMM-SS.md
   ├── .transcription/
-  │   ├── source.mp4.transcription-YYYYMMDD-HHMM-SS.md
-  │   └── source.mp4.transcript-YYYYMMDD-HHMM-SS.txt
+  │   ├── source.mp4.transcription-MODEL-YYYYMMDD-HHMM-SS.md
+  │   └── source.mp4.transcript-MODEL-YYYYMMDD-HHMM-SS.txt
   └── .logs/
-      └── transcribe-VERSION-YYYYMMDD-HHMM-SS.log
+      ├── transcribe-VERSION-YYYYMMDD-HHMM-SS.log
+      └── source.mp4-Processing-Time-MODEL-YYYYMMDD-HHMM-SS.md
 
 EXAMPLES
   ./transcribe.py --prerequis
-  ./transcribe.py --simulate --model tiny --source video.mp4
-  ./transcribe.py --exec --model tiny --source video.mp4
-  ./transcribe.py --exec --model tiny --source '*.mp4'
-  ./transcribe.py --exec --model tiny --source video1.mp4 'video 2.mp4'
-  ./transcribe.py --exec --model tiny --source-dir /media/videos
-  ./transcribe.py --exec --model tiny --source video.mp4 --dest-dir /media/results
-  ./transcribe.py --exec --model tiny --source video.mp4 --amplify 2
-  ./transcribe.py --exec --model tiny --source video.mp4 --amplify-db 6
-  ./transcribe.py --exec --model tiny --source video.mp4 --normalize
-  ./transcribe.py --exec --model tiny --source video.mp4 --vad
+  ./transcribe.py --simulate --source video.mp4 --model tiny
+  ./transcribe.py --exec --source video.mp4 --model tiny
+  ./transcribe.py --exec --source '*.mp4' --model tiny
+  ./transcribe.py --exec --source video1.mp4 'video 2.mp4' --model tiny
+  ./transcribe.py --exec --source *.mp4 --recursive --model large-v3
+  ./transcribe.py --simulate --source '*.mp4' --recursive --model tiny
+  ./transcribe.py --exec --source-dir /media/videos --recursive --model medium
+  ./transcribe.py --exec --source-dir /media/videos --model tiny
+  ./transcribe.py --exec --source video.mp4 --dest-dir /media/results --model tiny
+  ./transcribe.py --exec --source video.mp4 --amplify 2 --model tiny
+  ./transcribe.py --exec --source video.mp4 --amplify-db 6 --model tiny
+  ./transcribe.py --exec --source video.mp4 --normalize --model tiny
+  ./transcribe.py --exec --source video.mp4 --vad --model tiny
 
 IMPORTANT
   - French is already the default language.
@@ -226,6 +278,8 @@ IMPORTANT
   - Source media is never modified.
   - Missing models are never downloaded automatically.
   - Raw model text is preserved; no editorial rewriting or censorship.
+  - Processing-Time reports have an invariant structure for side-by-side model comparison.
+  - --recursive discovers every MP4 under --source-dir (default: cwd), without following directory symlinks.
   - Speaker diarization is not implemented; no fake speaker labels are generated.
   - SRT, WebVTT and JSON are not generated in this validation build.
 """
@@ -409,18 +463,53 @@ def resolve_sources(source_dir: Path, source_specs: Sequence[Sequence[str]] | No
     return result
 
 
+
+def resolve_recursive_mp4_sources(source_dir: Path) -> list[Path]:
+    """Scan source_dir recursively for .mp4 files, without following directory symlinks.
+
+    Intentional semantics: in recursive mode --source is not a filename filter.
+    This also handles --source *.mp4 expanded by the caller's shell.
+    No media files are read or copied during discovery.
+    """
+    result: list[Path] = []
+    seen: set[str] = set()
+
+    def on_walk_error(error: OSError) -> None:
+        raise error  # Never silently omit an unreadable subtree.
+
+    for directory, dirs, files in os.walk(source_dir, topdown=True, followlinks=False, onerror=on_walk_error):
+        dirs[:] = sorted((name for name in dirs if not (Path(directory) / name).is_symlink()), key=str.casefold)
+        for filename in sorted(files, key=str.casefold):
+            if Path(filename).suffix.lower() != ".mp4":
+                continue
+            candidate = Path(directory) / filename
+            # Reject symlinks, including those which escape the scan root.
+            if candidate.is_symlink():
+                continue
+            resolved = candidate.resolve(strict=True)
+            if not resolved.is_file():
+                continue
+            key = str(resolved)
+            if key not in seen:
+                seen.add(key)
+                result.append(resolved)
+    return result
+
+
 def format_run_stamp(dt: datetime) -> str:
     return dt.strftime("%Y%m%d-%H%M-%S")
 
 
-def output_paths(source: Path, dest_dir: Path | None, run_stamp: str) -> OutputPaths:
+def output_paths(source: Path, dest_dir: Path | None, run_stamp: str, model_name: str) -> OutputPaths:
     base = source.name
     transcript_base = source.parent if dest_dir is None else dest_dir
     transcript_dir = transcript_base / ".transcription"
+    logs_dir = source.parent / ".logs"
     return OutputPaths(
-        timestamp_md=source.parent / f"{base}.transcription_timestamps-{run_stamp}.md",
-        plain_md=transcript_dir / f"{base}.transcription-{run_stamp}.md",
-        plain_txt=transcript_dir / f"{base}.transcript-{run_stamp}.txt",
+        timestamp_md=source.parent / f"{base}.transcription_timestamps-{model_name}-{run_stamp}.md",
+        plain_md=transcript_dir / f"{base}.transcription-{model_name}-{run_stamp}.md",
+        plain_txt=transcript_dir / f"{base}.transcript-{model_name}-{run_stamp}.txt",
+        processing_report_md=logs_dir / f"{base}-Processing-Time-{model_name}-{run_stamp}.md",
     )
 
 
@@ -437,11 +526,12 @@ def candidate_paths(
     dest_dir: Path | None,
     run_stamp: str,
     timestamps: bool,
+    model_name: str,
 ) -> list[Path]:
     paths: list[Path] = []
     for source in sources:
-        out = output_paths(source, dest_dir, run_stamp)
-        paths.extend([out.plain_md, out.plain_txt])
+        out = output_paths(source, dest_dir, run_stamp, model_name)
+        paths.extend([out.plain_md, out.plain_txt, out.processing_report_md])
         if timestamps:
             paths.append(out.timestamp_md)
     paths.extend(log_paths_for_sources(sources, run_stamp))
@@ -453,13 +543,14 @@ def choose_run_stamp(
     dest_dir: Path | None,
     timestamps: bool,
     force: bool,
+    model_name: str,
 ) -> str:
     now = datetime.now()
     if force:
         return format_run_stamp(now)
     for offset in range(0, 120):
         stamp = format_run_stamp(now + timedelta(seconds=offset))
-        if not any(path.exists() for path in candidate_paths(sources, dest_dir, stamp, timestamps)):
+        if not any(path.exists() for path in candidate_paths(sources, dest_dir, stamp, timestamps, model_name)):
             return stamp
     raise RuntimeError("Unable to allocate a unique timestamped output set within 120 seconds.")
 
@@ -470,11 +561,12 @@ def validate_output_collisions(
     run_stamp: str,
     timestamps: bool,
     force: bool,
+    model_name: str,
 ) -> None:
     generated: list[Path] = []
     for source in sources:
-        out = output_paths(source, dest_dir, run_stamp)
-        generated.extend([out.plain_md, out.plain_txt])
+        out = output_paths(source, dest_dir, run_stamp, model_name)
+        generated.extend([out.plain_md, out.plain_txt, out.processing_report_md])
         if timestamps:
             generated.append(out.timestamp_md)
 
@@ -592,6 +684,122 @@ def write_outputs(
     return count, last_end
 
 
+def format_wall_clock(dt: datetime | None) -> str:
+    if dt is None:
+        return "N/A"
+    local = dt.astimezone()
+    return local.strftime("%Y-%m-%d %H:%M:%S.") + f"{local.microsecond // 1000:03d} " + (local.tzname() or "")
+
+
+def format_seconds(value: float | None) -> str:
+    return "N/A" if value is None else f"{value:.3f}"
+
+
+def one_line(value: object | None) -> str:
+    if value is None:
+        return "N/A"
+    text = str(value).replace("\r", " ").replace("\n", " ").replace("|", "\\|").strip()
+    return text if text else "N/A"
+
+
+def executed_command(argv: Sequence[str]) -> str:
+    forwarded = os.environ.get("DEEPECHO_ORIGINAL_COMMAND")
+    if forwarded:
+        return forwarded
+    return shlex.join([sys.argv[0], *argv])
+
+
+def write_processing_report(
+    path: Path,
+    *,
+    source: Path,
+    args: argparse.Namespace,
+    run_stamp: str,
+    status: str,
+    detected_language: str | None,
+    media_duration: float | None,
+    model_load_seconds: float | None,
+    processing_started: datetime | None,
+    processing_finished: datetime | None,
+    preprocessing_seconds: float | None,
+    transcription_seconds: float | None,
+    total_source_seconds: float | None,
+    segment_count: int | None,
+    transcript_end: float | None,
+    error: str | None,
+) -> None:
+    """Write the invariant benchmark template used for every model/source."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rtf = None
+    speed = None
+    if media_duration is not None and media_duration > 0 and transcription_seconds is not None:
+        rtf = transcription_seconds / media_duration
+        if transcription_seconds > 0:
+            speed = media_duration / transcription_seconds
+
+    amplify_factor = "OFF" if args.amplify is None else str(args.amplify)
+    amplify_db = "OFF" if args.amplify_db is None else str(args.amplify_db)
+    rows = [
+        "# DeepEcho Processing Time Report",
+        "",
+        "This file uses the same fixed structure for every model so reports can be compared side by side.",
+        "",
+        "## 1. Identification",
+        "",
+        "| Field | Value |",
+        "| --- | --- |",
+        f"| Source file | `{one_line(source.name)}` |",
+        f"| Source path | `{one_line(source)}` |",
+        f"| Model | `{one_line(args.model)}` |",
+        f"| Run timestamp | `{run_stamp}` |",
+        f"| Status | `{one_line(status)}` |",
+        "",
+        "## 2. Transcription Configuration",
+        "",
+        "| Field | Value |",
+        "| --- | --- |",
+        f"| Requested language | `{one_line(args.language)}` |",
+        f"| Detected language | `{one_line(detected_language)}` |",
+        f"| Device | `{one_line(args.device)}` |",
+        f"| Compute type | `{one_line(args.compute_type)}` |",
+        f"| VAD | `{'ON' if args.vad else 'OFF'}` |",
+        f"| Normalize | `{'ON' if args.normalize else 'OFF'}` |",
+        f"| Amplify factor | `{amplify_factor}` |",
+        f"| Amplify dB | `{amplify_db}` |",
+        f"| Timestamped Markdown | `{'ON' if args.timestamps else 'OFF'}` |",
+        "",
+        "## 3. Timing",
+        "",
+        "| Field | Value |",
+        "| --- | ---: |",
+        f"| Media duration (s) | {format_seconds(media_duration)} |",
+        f"| Model load time (s) | {format_seconds(model_load_seconds)} |",
+        f"| Processing start | {format_wall_clock(processing_started)} |",
+        f"| Processing end | {format_wall_clock(processing_finished)} |",
+        f"| Preprocessing time (s) | {format_seconds(preprocessing_seconds)} |",
+        f"| Transcription + output processing time (s) | {format_seconds(transcription_seconds)} |",
+        f"| Total source processing time (s) | {format_seconds(total_source_seconds)} |",
+        f"| Real-time factor (processing / media) | {'N/A' if rtf is None else f'{rtf:.4f} x'} |",
+        f"| Processing speed (media / processing) | {'N/A' if speed is None else f'{speed:.4f} x realtime'} |",
+        "",
+        "## 4. Result",
+        "",
+        "| Field | Value |",
+        "| --- | --- |",
+        f"| Segments | {'N/A' if segment_count is None else segment_count} |",
+        f"| Transcript end (s) | {format_seconds(transcript_end)} |",
+        f"| Error | {one_line(error)} |",
+        "",
+        "## 5. Comparison Notes",
+        "",
+        "- Lower real-time factor is faster.",
+        "- Higher processing-speed value is faster.",
+        "- Headers, field order, units and table structure are invariant across models; only values change.",
+        "",
+    ]
+    path.write_text("\n".join(rows), encoding="utf-8", newline="\n")
+
+
 def setup_logger(sources: Sequence[Path], run_stamp: str) -> tuple[logging.Logger, list[Path]]:
     log_paths = log_paths_for_sources(sources, run_stamp)
     logger = logging.getLogger("deepecho")
@@ -630,17 +838,19 @@ def print_plan(
     print(f"Amplify dB          : {args.amplify_db if args.amplify_db is not None else 'OFF'}")
     print(f"Timestamped MD      : {'ON' if args.timestamps else 'OFF'}")
     print(f"Force exact target  : {'YES' if args.force else 'NO'}")
+    print(f"Recursive scan      : {'ON' if args.recursive else 'OFF'}")
     print(f"Source count        : {len(sources)}")
     print(f"Plain output base   : {dest_dir if dest_dir is not None else 'each source directory'}")
     print("-" * 76)
 
     for index, source in enumerate(sources, start=1):
-        paths = output_paths(source, dest_dir, run_stamp)
+        paths = output_paths(source, dest_dir, run_stamp, args.model)
         print(f"{index}. SOURCE : {source}")
         if args.timestamps:
             print(f"   OUTPUT : {paths.timestamp_md}")
         print(f"   OUTPUT : {paths.plain_md}")
         print(f"   OUTPUT : {paths.plain_txt}")
+        print(f"   REPORT : {paths.processing_report_md}")
         print(f"   LOGDIR : {source.parent / '.logs'}")
 
 
@@ -677,9 +887,16 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     dest_dir = resolve_path(args.dest_dir) if args.dest_dir is not None else None
-    sources = resolve_sources(source_dir, args.source)
+    try:
+        sources = (
+            resolve_recursive_mp4_sources(source_dir)
+            if args.recursive else resolve_sources(source_dir, args.source)
+        )
+    except (OSError, RuntimeError) as exc:
+        print(f"ERROR: source discovery failed: {exc}", file=sys.stderr)
+        return 2
     if not sources:
-        patterns = flatten_source_specs(args.source)
+        patterns = "recursive *.mp4" if args.recursive else str(flatten_source_specs(args.source))
         print(f"ERROR: no supported media matched {patterns} in {source_dir}", file=sys.stderr)
         return 2
 
@@ -695,8 +912,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        run_stamp = choose_run_stamp(sources, dest_dir, args.timestamps, args.force)
-        validate_output_collisions(sources, dest_dir, run_stamp, args.timestamps, args.force)
+        run_stamp = choose_run_stamp(sources, dest_dir, args.timestamps, args.force, args.model)
+        validate_output_collisions(sources, dest_dir, run_stamp, args.timestamps, args.force, args.model)
     except RuntimeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
@@ -711,6 +928,8 @@ def main(argv: list[str] | None = None) -> int:
         dest_dir.mkdir(parents=True, exist_ok=True)
 
     logger, log_paths = setup_logger(sources, run_stamp)
+    command_text = executed_command(argv)
+    logger.info("COMMAND: %s", command_text)
     logger.info("DeepEcho transcription started")
     logger.info("Version=%s run_stamp=%s model=%s language=%s device=%s compute_type=%s",
                 VERSION, run_stamp, args.model, args.language, args.device, args.compute_type)
@@ -721,8 +940,10 @@ def main(argv: list[str] | None = None) -> int:
     for log_path in log_paths:
         print(f"  {log_path}")
 
+    model_load_t0 = time.perf_counter()
     try:
         model, selected_model, pyav_compat_active = load_model(args)
+        model_load_seconds = time.perf_counter() - model_load_t0
     except Exception as exc:
         logger.exception("Model load failed")
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -739,12 +960,29 @@ def main(argv: list[str] | None = None) -> int:
         print()
         print(f"[{index}/{len(sources)}] Transcribing: {source}")
         logger.info("Transcribing source=%s", source)
-        paths = output_paths(source, dest_dir, run_stamp)
+        paths = output_paths(source, dest_dir, run_stamp, args.model)
+
+        source_started_dt = datetime.now().astimezone()
+        source_t0 = time.perf_counter()
+        source_finished_dt: datetime | None = None
+        preprocessing_seconds: float | None = None
+        transcription_seconds: float | None = None
+        total_source_seconds: float | None = None
+        detected_language: str | None = None
+        duration: float | None = None
+        segment_count: int | None = None
+        last_end: float | None = None
+        source_status = "ERROR"
+        source_error: str | None = None
 
         try:
             with tempfile.TemporaryDirectory(prefix="deepecho_transcribe_") as temp_name:
                 temp_dir = Path(temp_name)
+                preprocess_t0 = time.perf_counter()
                 audio_source = preprocess_audio(source, args, temp_dir)
+                preprocessing_seconds = time.perf_counter() - preprocess_t0
+
+                transcription_t0 = time.perf_counter()
                 segments, info = model.transcribe(
                     str(audio_source),
                     language=language,
@@ -754,25 +992,29 @@ def main(argv: list[str] | None = None) -> int:
                     word_timestamps=False,
                     log_progress=True,
                 )
+                detected_language = getattr(info, "language", None)
+                raw_duration = getattr(info, "duration", None)
+                duration = float(raw_duration) if raw_duration is not None else None
                 segment_count, last_end = write_outputs(
                     source=source,
                     paths=paths,
                     segments=segments,
                     timestamps=args.timestamps,
                 )
+                transcription_seconds = time.perf_counter() - transcription_t0
+                source_status = "OK"
 
-                detected_language = getattr(info, "language", None)
-                duration = getattr(info, "duration", None)
                 print(f"Segments            : {segment_count}")
                 if detected_language:
                     print(f"Language            : {detected_language}")
                 if duration is not None:
-                    print(f"Duration            : {float(duration):.1f} s")
+                    print(f"Duration            : {duration:.1f} s")
                 print(f"Transcript end      : {last_end:.1f} s")
                 if args.timestamps:
                     print(f"Created             : {paths.timestamp_md}")
                 print(f"Created             : {paths.plain_md}")
                 print(f"Created             : {paths.plain_txt}")
+                print(f"Performance report  : {paths.processing_report_md}")
                 print("RESULT              : OK")
 
                 logger.info(
@@ -782,12 +1024,40 @@ def main(argv: list[str] | None = None) -> int:
                 )
         except subprocess.CalledProcessError as exc:
             overall_rc = 1
+            source_error = f"FFmpeg preprocessing failed: {exc}"
             logger.exception("FFmpeg preprocessing failed for %s", source)
             print(f"ERROR: FFmpeg preprocessing failed for {source}: {exc}", file=sys.stderr)
         except Exception as exc:
             overall_rc = 1
+            source_error = f"Transcription failed: {exc}"
             logger.exception("Transcription failed for %s", source)
             print(f"ERROR: transcription failed for {source}: {exc}", file=sys.stderr)
+        finally:
+            source_finished_dt = datetime.now().astimezone()
+            total_source_seconds = time.perf_counter() - source_t0
+            try:
+                write_processing_report(
+                    paths.processing_report_md,
+                    source=source,
+                    args=args,
+                    run_stamp=run_stamp,
+                    status=source_status,
+                    detected_language=detected_language,
+                    media_duration=duration,
+                    model_load_seconds=model_load_seconds,
+                    processing_started=source_started_dt,
+                    processing_finished=source_finished_dt,
+                    preprocessing_seconds=preprocessing_seconds,
+                    transcription_seconds=transcription_seconds,
+                    total_source_seconds=total_source_seconds,
+                    segment_count=segment_count,
+                    transcript_end=last_end,
+                    error=source_error,
+                )
+            except Exception as report_exc:
+                overall_rc = 1
+                logger.exception("Unable to write Processing-Time report for %s", source)
+                print(f"ERROR: unable to write Processing-Time report for {source}: {report_exc}", file=sys.stderr)
 
     logger.info("DeepEcho transcription finished rc=%s", overall_rc)
     print()
